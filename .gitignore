@@ -1,0 +1,34 @@
+# Local agent instructions and planning notes
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+CODEX.md
+.agents/
+.claude/
+.codex/
+.gemini/
+.cursor/
+.firecrawl/
+docs/superpowers/
+docs/plans/
+docs/specs/
+plans/
+specs/
+planning/
+
+# Runtime state, backups, and logs
+.vibespec-state.json
+*.bak
+*.tmp
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+package-lock.json
+skills-lock.json
+package-lock.json
+*.swp
+*.swo
+.idea/
+.vscode/
