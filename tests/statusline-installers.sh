@@ -180,33 +180,6 @@ EOF
     assert_not_contains "$settings" '"statusLine"'
 }
 
-test_copilot_install_configures_statusline_and_flag() {
-    local home="$TMPDIR/copilot-install"
-    mkdir -p "$home"
-
-    HOME="$home" bash "$ROOT/statuslines/copilot-install.sh" >/dev/null
-
-    local settings="$home/.copilot/settings.json"
-    assert_contains "$settings" '"statusLine"'
-    assert_contains "$settings" '"STATUS_LINE"'
-    assert_contains "$settings" "$home/.copilot/statusline.js"
-    test -x "$home/.copilot/statusline.js"
-}
-
-test_copilot_install_writes_settings_without_node() {
-    local home="$TMPDIR/copilot-no-node"
-    mkdir -p "$home"
-
-    HOME="$home" PATH="/usr/bin:/bin" bash "$ROOT/statuslines/copilot-install.sh" >/dev/null
-
-    local settings="$home/.copilot/settings.json"
-    assert_contains "$settings" '"statusLine"'
-    assert_contains "$settings" '"STATUS_LINE"'
-    # No node on PATH: command falls back to bare "node" plus the hook path.
-    assert_contains "$settings" '"command": "node '
-    assert_contains "$settings" "$home/.copilot/statusline.js"
-}
-
 test_codex_install_creates_tui_status_line
 test_codex_install_preserves_other_status_line_keys
 test_codex_reset_only_removes_tui_status_line
@@ -216,7 +189,5 @@ test_cc_install_configures_command_statusline
 test_cc_install_writes_settings_without_node
 test_cc_install_preserves_other_settings_keys
 test_cc_reset_removes_statusline_only
-test_copilot_install_configures_statusline_and_flag
-test_copilot_install_writes_settings_without_node
 
 echo "statusline installer tests passed"

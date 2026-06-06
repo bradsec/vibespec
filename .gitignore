@@ -28,6 +28,7 @@ Thumbs.db
 package-lock.json
 skills-lock.json
 package-lock.json
+package.json
 *.swp
 *.swo
 .idea/

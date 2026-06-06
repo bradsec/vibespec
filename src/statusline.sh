@@ -41,9 +41,6 @@ run_statusline_script() {
         antigravity-install.sh)
             record_install "statusline:antigravity" "statusline" "$script" "$HOME/.gemini/antigravity-cli/statusline.js" "$HOME/.gemini/antigravity-cli/settings.json"
             ;;
-        copilot-install.sh)
-            record_install "statusline:copilot" "statusline" "$script" "$HOME/.copilot/statusline.js" "$HOME/.copilot/settings.json"
-            ;;
     esac
 }
 
@@ -51,14 +48,12 @@ install_all() {
     run_statusline_script "cc-install.sh"
     run_statusline_script "codex-install.sh"
     run_statusline_script "antigravity-install.sh"
-    run_statusline_script "copilot-install.sh"
 }
 
 reset_all() {
     run_statusline_script "cc-reset.sh"
     run_statusline_script "codex-reset.sh"
     run_statusline_script "antigravity-reset.sh"
-    run_statusline_script "copilot-reset.sh"
 }
 
 main() {
@@ -67,26 +62,22 @@ main() {
             "Install Claude Code statusline" \
             "Install Codex statusline" \
             "Install Antigravity CLI statusline" \
-            "Install GitHub Copilot CLI statusline" \
             "Install all statuslines" \
             "Reset Claude Code statusline" \
             "Reset Codex statusline" \
             "Reset Antigravity CLI statusline" \
-            "Reset GitHub Copilot CLI statusline" \
             "Reset all statuslines" \
             "Back"
         case "$MENU_CHOICE" in
             1)  run_statusline_script "cc-install.sh" ;;
             2)  run_statusline_script "codex-install.sh" ;;
             3)  run_statusline_script "antigravity-install.sh" ;;
-            4)  run_statusline_script "copilot-install.sh" ;;
-            5)  install_all ;;
-            6)  run_statusline_script "cc-reset.sh" ;;
-            7)  run_statusline_script "codex-reset.sh" ;;
-            8)  run_statusline_script "antigravity-reset.sh" ;;
-            9)  run_statusline_script "copilot-reset.sh" ;;
-            10) reset_all ;;
-            11) return ;;
+            4)  install_all ;;
+            5)  run_statusline_script "cc-reset.sh" ;;
+            6)  run_statusline_script "codex-reset.sh" ;;
+            7)  run_statusline_script "antigravity-reset.sh" ;;
+            8)  reset_all ;;
+            9)  return ;;
         esac
         pause
     done

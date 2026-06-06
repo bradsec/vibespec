@@ -24,14 +24,12 @@ declare -A TOOL_PATHS
 TOOL_PATHS["Claude Code"]="$HOME/.claude/CLAUDE.md"
 TOOL_PATHS["Codex"]="$HOME/.codex/AGENTS.md"
 TOOL_PATHS["Antigravity CLI"]="$HOME/.gemini/AGENTS.md"
-TOOL_PATHS["Copilot CLI"]="$HOME/.copilot/copilot-instructions.md"
 
 # Tool name → restart instructions shown after install
 declare -A TOOL_RESTART
 TOOL_RESTART["Claude Code"]="Restart Claude Code or run /reload in an active session."
 TOOL_RESTART["Codex"]="Restart Codex to load the new rules."
 TOOL_RESTART["Antigravity CLI"]="Restart Antigravity CLI to load the new rules."
-TOOL_RESTART["Copilot CLI"]="Restart GitHub Copilot CLI to load the new rules."
 
 install_config() {
     local tool="$1"
@@ -99,21 +97,18 @@ main() {
             "Configure Claude Code  (~/.claude/CLAUDE.md)" \
             "Configure Codex        (~/.codex/AGENTS.md)" \
             "Configure Antigravity  (~/.gemini/AGENTS.md)" \
-            "Configure Copilot CLI  (~/.copilot/copilot-instructions.md)" \
             "Configure all tools" \
             "Back"
         case "$MENU_CHOICE" in
             1) run_install install_config "Claude Code" ;;
             2) run_install install_config "Codex" ;;
             3) run_install install_config "Antigravity CLI" ;;
-            4) run_install install_config "Copilot CLI" ;;
-            5)
+            4)
                 run_install install_config "Claude Code"
                 run_install install_config "Codex"
                 run_install install_config "Antigravity CLI"
-                run_install install_config "Copilot CLI"
                 ;;
-            6) return ;;
+            5) return ;;
         esac
     done
 }

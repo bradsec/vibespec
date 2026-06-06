@@ -26,9 +26,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/bradsec/vibespec/main/vibesp
 
 | Menu option | What it installs |
 |-------------|-----------------|
-| Install AI Coding CLI Tools | nvm, Claude Code, Codex, Antigravity CLI, GitHub Copilot CLI, plus verify, replace, and full-removal actions |
+| Install AI Coding CLI Tools | nvm, Claude Code, Codex, Antigravity CLI, plus verify, replace, and full-removal actions |
 | Configure AI Coding Rules | Deploys `RULES.md` to each tool's config path with the correct filename header |
-| Install Status Lines | Installs or resets statusline configuration for Claude Code, Codex, Antigravity CLI, and GitHub Copilot CLI |
+| Install Status Lines | Installs or resets statusline configuration for Claude Code, Codex, and Antigravity CLI |
 
 The menu uses local scripts when the repo is cloned. When run directly from GitHub, it fetches helper scripts from the `main` branch as needed.
 
@@ -47,7 +47,6 @@ Cross-tool config paths:
 | Claude Code | `~/.claude/CLAUDE.md` |
 | Codex | `~/.codex/AGENTS.md` |
 | Antigravity CLI | `~/.gemini/AGENTS.md` |
-| Copilot CLI | `~/.copilot/copilot-instructions.md` |
 
 ## Requirements
 
@@ -63,9 +62,9 @@ Node.js can be installed via nvm from the tools setup. Restart your terminal and
 
 If an old or broken Node.js install is being detected, use `Replace Node.js/nvm` from the tools menu. It removes apt-managed `nodejs`/`npm`, removes `~/.nvm`, reinstalls nvm, then installs and uses the LTS Node release.
 
-`Verify installers (no install)` checks each installer source without installing anything. It confirms the install functions are present, queries the npm registry for the Claude Code package, and sends a read-only request to the Codex, Antigravity CLI, and Copilot CLI installer URLs, reporting the HTTP status for each. The individual install options also run this check first and stop with `<tool> installer not available` rather than attempt an install whose source cannot be reached.
+`Verify installers (no install)` checks each installer source without installing anything. It confirms the install functions are present, queries the npm registry for the Claude Code package, and sends a read-only request to the Codex and Antigravity CLI installer URLs, reporting the HTTP status for each. The individual install options also run this check first and stop with `<tool> installer not available` rather than attempt an install whose source cannot be reached.
 
-`Remove ALL agents + wipe all config (DESTRUCTIVE)` is a full teardown gated behind a typed `CONFIRM`. It uninstalls the npm packages and command shims for Claude Code, Codex, Antigravity CLI, and GitHub Copilot CLI, then deletes `~/.claude` (agents, skills, settings, chat history, projects, and saved memory), `~/.claude.json`, `~/.gemini/antigravity-cli`, the vibespec rule files in `~/.codex`, `~/.gemini`, and `~/.copilot`, the Codex and Copilot statusline scripts and config entries, and the vibespec install state in `~/.config/vibespec`. It does not remove Node.js or nvm. There is no backup and the action cannot be undone.
+`Remove ALL agents + wipe all config (DESTRUCTIVE)` is a full teardown gated behind a typed `CONFIRM`. It uninstalls the npm packages and command shims for Claude Code, Codex, and Antigravity CLI, then deletes `~/.claude` (agents, skills, settings, chat history, projects, and saved memory), `~/.claude.json`, `~/.gemini/antigravity-cli`, the vibespec rule files in `~/.codex` and `~/.gemini`, the Codex statusline script and config entry, and the vibespec install state in `~/.config/vibespec`. It does not remove Node.js or nvm. There is no backup and the action cannot be undone.
 
 ## Install state
 
@@ -86,7 +85,6 @@ All statusline scripts live in `statuslines/`.
 | Claude Code | Installs a documented command-backed statusline showing context usage, rate limits, git status, and token counts. |
 | Codex | Installs the local formatter script and configures supported built-in `tui.status_line` items in `~/.codex/config.toml`. Command-backed custom statuslines are not supported yet. |
 | Antigravity CLI | Installs a documented command-backed statusline showing context usage, agent state, git status, and token counts. |
-| GitHub Copilot CLI | Installs a command-backed statusline and enables the `STATUS_LINE` feature flag in `~/.copilot/settings.json`. |
 
 The statusline menu also includes reset actions to restore each tool's original statusline behavior. Resets remove only the statusline-related setting for the selected tool and leave unrelated config keys intact.
 

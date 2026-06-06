@@ -12,7 +12,7 @@ source "${SCRIPT_DIR}/lib.sh" 2>/dev/null || \
 run_statusline_reset() {
     local script="$1"
     case "$script" in
-        codex-reset.sh|copilot-reset.sh) ;;
+        codex-reset.sh) ;;
         *) print_message error "Refusing unknown reset script: ${script}"; return 1 ;;
     esac
 
@@ -167,7 +167,7 @@ remove_user_command() {
 # (e.g. /usr/local/bin) if they were installed as root via curl or sudo npm.
 # Check each known command and offer a targeted sudo rm for any still found.
 remove_system_path_residue() {
-    local cmds=("claude" "codex" "agy" "copilot")
+    local cmds=("claude" "codex" "agy")
     local found=0
     local cmd path
 
@@ -204,7 +204,7 @@ uninstall_all_coding_cli_tools() {
     fi
 
     if command_exists npm; then
-        npm uninstall -g @anthropic-ai/claude-code @openai/codex @github/copilot || \
+        npm uninstall -g @anthropic-ai/claude-code @openai/codex || \
             print_message warning "npm uninstall failed; continuing with cleanup."
     else
         print_message warning "npm not found; skipping npm package uninstall."
@@ -225,7 +225,6 @@ uninstall_all_coding_cli_tools() {
     remove_user_command claude
     remove_user_command codex
     remove_user_command agy
-    remove_user_command copilot
 
     # Full Claude wipe: agents, skills, settings, chat history, projects, saved memory.
     remove_path_under_home "$HOME/.claude"
@@ -236,24 +235,19 @@ uninstall_all_coding_cli_tools() {
     # vibespec-written rule files for the remaining tools.
     remove_path_under_home "$HOME/.codex/AGENTS.md"
     remove_path_under_home "$HOME/.gemini/AGENTS.md"
-    remove_path_under_home "$HOME/.copilot/copilot-instructions.md"
 
-    # Codex and Copilot statusline residue. Claude and Antigravity statuslines
-    # live inside the directories wiped above; these two do not. Delete the
-    # orphan scripts and surgically strip the statusline entries, leaving the
-    # rest of config.toml / settings.json intact.
+    # Codex statusline residue. Claude and Antigravity statuslines live inside
+    # the directories wiped above. Delete the orphan script and surgically strip
+    # the statusline entry, leaving the rest of config.toml intact.
     remove_path_under_home "$HOME/.codex/statusline.js"
-    remove_path_under_home "$HOME/.copilot/statusline.js"
     run_statusline_reset "codex-reset.sh"
-    run_statusline_reset "copilot-reset.sh"
 
     # vibespec install-state tracking.
     remove_path_under_home "$HOME/.config/vibespec"
 
     # Backups left behind by previous rule installs.
     rm -f "$HOME"/.codex/AGENTS.md.*.bak \
-          "$HOME"/.gemini/AGENTS.md.*.bak \
-          "$HOME"/.copilot/copilot-instructions.md.*.bak 2>/dev/null || true
+          "$HOME"/.gemini/AGENTS.md.*.bak 2>/dev/null || true
 
     # Final sweep: catch binaries still reachable at system paths (e.g. installed
     # via curl as root) that the steps above could not reach without sudo.
@@ -316,7 +310,7 @@ verify_installers() {
     print_message header "Verifying installers (no install)"
     local fail=0 fn
 
-    for fn in install_claude_code install_codex install_antigravity install_copilot; do
+    for fn in install_claude_code install_codex install_antigravity; do
         if declare -F "$fn" >/dev/null; then
             print_message success "function defined: ${fn}"
         else
@@ -328,7 +322,6 @@ verify_installers() {
     if ! check_installer_npm "@anthropic-ai/claude-code"; then fail=1; fi
     if ! check_installer_url "https://chatgpt.com/codex/install.sh"; then fail=1; fi
     if ! check_installer_url "https://antigravity.google/cli/install.sh"; then fail=1; fi
-    if ! check_installer_url "https://gh.io/copilot-install"; then fail=1; fi
 
     if [[ "$fail" -eq 0 ]]; then
         print_message success "All installers verified."
@@ -398,31 +391,6 @@ install_antigravity() {
     command_exists agy && print_message info "Version: $(agy --version 2>/dev/null || echo 'restart terminal to verify')"
 }
 
-install_copilot() {
-    print_message header "Installing GitHub Copilot CLI"
-    if command_exists copilot; then
-        print_message success "GitHub Copilot CLI already installed."
-        print_message info "Version: $(copilot --version 2>/dev/null || echo 'restart terminal to verify')"
-        record_install "tool:copilot" "tool" "existing copilot command" "$(command -v copilot)"
-        return
-    fi
-    if command_exists curl; then
-        require_installer_url "GitHub Copilot CLI" "https://gh.io/copilot-install" || return 1
-        curl -fsSL https://gh.io/copilot-install | bash
-    elif command_exists npm; then
-        print_message warning "Requires Node.js 22 or later."
-        ensure_node || return 1
-        require_installer_npm "GitHub Copilot CLI" "@github/copilot" || return 1
-        npm install -g @github/copilot
-    else
-        print_message error "Neither curl nor npm found. Install manually."
-        return 1
-    fi
-    print_message success "GitHub Copilot CLI installed."
-    record_install "tool:copilot" "tool" "copilot installer" "$(command -v copilot 2>/dev/null || true)"
-    command_exists copilot && print_message info "Version: $(copilot --version 2>/dev/null || echo 'restart terminal to verify')"
-}
-
 main() {
     while true; do
         menu_select "Install AI Coding CLI Tools" \
@@ -431,7 +399,6 @@ main() {
             "Install Claude Code" \
             "Install Codex (OpenAI)" \
             "Install Antigravity CLI (Google)" \
-            "Install GitHub Copilot CLI" \
             "Install all" \
             "Verify installers (no install)" \
             "Remove ALL agents + wipe all config (DESTRUCTIVE)" \
@@ -446,23 +413,21 @@ main() {
             3) run_install install_claude_code ;;
             4) run_install install_codex ;;
             5) run_install install_antigravity ;;
-            6) run_install install_copilot ;;
-            7)
+            6)
                 run_install install_nvm
                 print_message warning "Node tools below require a new terminal after nvm. Run 'nvm install --lts' first."
                 run_install install_claude_code
                 run_install install_codex
                 run_install install_antigravity
-                run_install install_copilot
                 ;;
-            8) run_install verify_installers ;;
-            9)
+            7) run_install verify_installers ;;
+            8)
                 print_message warning "DESTRUCTIVE: this NUKES everything below. No undo. No backup."
-                print_message warning "  - Claude, Codex, Antigravity, Copilot CLI binaries + npm packages"
+                print_message warning "  - Claude, Codex, Antigravity CLI binaries + npm packages"
                 print_message warning "  - ALL of ~/.claude: agents, skills, settings, chat history, projects, saved memory"
                 print_message warning "  - ~/.claude.json: global config and all configured servers"
                 print_message warning "  - ~/.gemini/antigravity-cli: Antigravity install and statusline"
-                print_message warning "  - vibespec rule files in ~/.codex, ~/.gemini, ~/.copilot"
+                print_message warning "  - vibespec rule files in ~/.codex and ~/.gemini"
                 print_message warning "  - all installed statuslines and their config entries"
                 print_message warning "  - vibespec install state in ~/.config/vibespec"
                 print_message warning "Everything above will be GONE and cannot be recovered."
@@ -472,7 +437,7 @@ main() {
                     print_message info "Cancelled. Nothing was removed."
                 fi
                 ;;
-            10) return ;;
+            9) return ;;
         esac
     done
 }

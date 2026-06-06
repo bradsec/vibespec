@@ -155,8 +155,8 @@ test_uninstall_all_coding_cli_tools_removes_known_user_commands_and_npm_packages
     local output="$TMPDIR/uninstall.out"
     mkdir -p "$home/.local/bin" "$bin"
 
-    touch "$home/.local/bin/claude" "$home/.local/bin/codex" "$home/.local/bin/agy" "$home/.local/bin/copilot"
-    chmod +x "$home/.local/bin/claude" "$home/.local/bin/codex" "$home/.local/bin/agy" "$home/.local/bin/copilot"
+    touch "$home/.local/bin/claude" "$home/.local/bin/codex" "$home/.local/bin/agy"
+    chmod +x "$home/.local/bin/claude" "$home/.local/bin/codex" "$home/.local/bin/agy"
 
     cat > "$bin/npm" <<'EOF'
 #!/usr/bin/env sh
@@ -170,11 +170,10 @@ EOF
     ' > "$output"
 
     assert_contains "$output" "Uninstalling AI coding CLI tools"
-    assert_contains "$TMPDIR/npm.log" "uninstall -g @anthropic-ai/claude-code @openai/codex @github/copilot"
+    assert_contains "$TMPDIR/npm.log" "uninstall -g @anthropic-ai/claude-code @openai/codex"
     test ! -e "$home/.local/bin/claude"
     test ! -e "$home/.local/bin/codex"
     test ! -e "$home/.local/bin/agy"
-    test ! -e "$home/.local/bin/copilot"
 }
 
 test_uninstall_all_wipes_config_and_state_paths() {
@@ -183,16 +182,14 @@ test_uninstall_all_wipes_config_and_state_paths() {
     local output="$TMPDIR/nuke.out"
     mkdir -p "$home/.local/bin" "$bin"
     mkdir -p "$home/.claude/agents" "$home/.gemini/antigravity-cli" \
-             "$home/.codex" "$home/.copilot" "$home/.config/vibespec"
+             "$home/.codex" "$home/.config/vibespec"
     touch "$home/.claude.json" \
           "$home/.claude/settings.json" \
           "$home/.gemini/antigravity-cli/statusline.js" \
           "$home/.codex/AGENTS.md" \
           "$home/.gemini/AGENTS.md" \
-          "$home/.copilot/copilot-instructions.md" \
           "$home/.codex/AGENTS.md.01012026.bak" \
           "$home/.codex/statusline.js" \
-          "$home/.copilot/statusline.js" \
           "$home/.config/vibespec/installs.json"
 
     cat > "$home/.codex/config.toml" <<'EOF'
@@ -201,13 +198,6 @@ status_line = "node ~/.codex/statusline.js"
 
 [history]
 persistence = "save-all"
-EOF
-
-    cat > "$home/.copilot/settings.json" <<'EOF'
-{
-  "statusLine": { "type": "command", "command": "node ~/.copilot/statusline.js" },
-  "theme": "dark"
-}
 EOF
 
     cat > "$bin/npm" <<'EOF'
@@ -221,31 +211,23 @@ EOF
         uninstall_all_coding_cli_tools
     ' > "$output"
 
-    assert_contains "$TMPDIR/nuke-npm.log" "uninstall -g @anthropic-ai/claude-code @openai/codex @github/copilot"
+    assert_contains "$TMPDIR/nuke-npm.log" "uninstall -g @anthropic-ai/claude-code @openai/codex"
     test ! -e "$home/.claude"
     test ! -e "$home/.claude.json"
     test ! -e "$home/.gemini/antigravity-cli"
     test ! -e "$home/.codex/AGENTS.md"
     test ! -e "$home/.gemini/AGENTS.md"
-    test ! -e "$home/.copilot/copilot-instructions.md"
     test ! -e "$home/.codex/AGENTS.md.01012026.bak"
     test ! -e "$home/.config/vibespec"
 
-    # Orphan statusline scripts removed.
+    # Orphan statusline script removed.
     test ! -e "$home/.codex/statusline.js"
-    test ! -e "$home/.copilot/statusline.js"
 
-    # Tool config files survive, but the statusline entries are stripped.
+    # Tool config file survives, but the statusline entry is stripped.
     test -f "$home/.codex/config.toml"
-    test -f "$home/.copilot/settings.json"
     assert_contains "$home/.codex/config.toml" 'persistence = "save-all"'
-    assert_contains "$home/.copilot/settings.json" '"theme": "dark"'
     if grep -q 'status_line' "$home/.codex/config.toml"; then
         echo "Expected status_line stripped from config.toml" >&2
-        exit 1
-    fi
-    if grep -q 'statusLine' "$home/.copilot/settings.json"; then
-        echo "Expected statusLine stripped from settings.json" >&2
         exit 1
     fi
 }
@@ -290,6 +272,18 @@ test_script_code_contains_no_plugin_or_mcp_references() {
     fi
 }
 
+test_script_code_contains_no_removed_tool_references() {
+    local output
+    local pattern
+
+    pattern="$(printf 'co%s|Co%s|CO%s' 'pilot' 'pilot' 'PILOT')"
+    if output="$(grep -RInE "$pattern" "$ROOT/vibespec.sh" "$ROOT/src" 2>/dev/null)"; then
+        echo "Script code still contains removed-tool references:" >&2
+        echo "$output" >&2
+        exit 1
+    fi
+}
+
 test_records_install_manifest
 test_tools_script_can_be_sourced_without_running_menu
 test_claude_install_skips_when_command_exists
@@ -300,5 +294,6 @@ test_uninstall_all_wipes_config_and_state_paths
 test_uninstall_all_refuses_unsafe_home
 test_removed_installers_are_not_referenced
 test_script_code_contains_no_plugin_or_mcp_references
+test_script_code_contains_no_removed_tool_references
 
 echo "install state tests passed"
