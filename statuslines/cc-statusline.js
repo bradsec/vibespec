@@ -6,16 +6,9 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 // ── Visual helpers ────────────────────────────────────────────────────────────
-
-// Build a segmented bar using block characters.
-// segments: total bar width; pct: 0-100
-function makeBar(pct, segments, filled_char, empty_char) {
-  const n = Math.round((Math.max(0, Math.min(100, pct)) / 100) * segments);
-  return filled_char.repeat(n) + empty_char.repeat(segments - n);
-}
 
 // ANSI helpers — reset is explicit so colors never bleed across segments
 const R = '\x1b[0m';
@@ -23,7 +16,6 @@ const R = '\x1b[0m';
 function color(ansi, text) { return `${ansi}${text}${R}`; }
 
 // Named palette — every color defined once, used by name throughout
-function dim(t)        { return color('\x1b[2m',           t); }
 function bold(t)       { return color('\x1b[1m',           t); }
 function white(t)      { return color('\x1b[97m',          t); }   // bright white — primary info
 function softBlue(t)   { return color('\x1b[38;5;111m',    t); }   // #87afff — model name
@@ -62,38 +54,36 @@ function metricBar(label, pct, segments) {
 
 // ── Git status ────────────────────────────────────────────────────────────────
 // Returns null when cwd is not inside a git repo (or git is not available).
-// All commands use --no-optional-locks to avoid touching lock files.
+// execFileSync with argument arrays: no shell involved, fixed arguments only.
+// --no-optional-locks is a global git flag, so it goes before the subcommand.
 function getGitInfo(cwd) {
   const opts = { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] };
-  try {
-    // Confirm we're in a git repo; get the root so relative paths are correct
-    execSync('git rev-parse --git-dir', opts);
-  } catch (_) {
-    return null; // Not a git repo
-  }
 
-  const run = cmd => {
-    try { return execSync(cmd, opts).trim(); } catch (_) { return ''; }
+  const run = args => {
+    try { return execFileSync('git', args, opts).trim(); } catch (_) { return null; }
   };
 
+  // Confirm we're in a git repo (also fails when git is not installed)
+  if (run(['rev-parse', '--git-dir']) === null) return null;
+
   // Branch name (or short SHA when detached HEAD)
-  const branch = run('git symbolic-ref --short HEAD') ||
-                 run('git rev-parse --short HEAD') ||
+  const branch = run(['symbolic-ref', '--short', 'HEAD']) ||
+                 run(['rev-parse', '--short', 'HEAD']) ||
                  '?';
 
   // Dirty file count: modified + added + deleted (tracked changes only + untracked)
-  const statusLines = run('git status --porcelain --no-optional-locks');
+  const statusLines = run(['--no-optional-locks', 'status', '--porcelain']) || '';
   const dirtyCount  = statusLines ? statusLines.split('\n').filter(Boolean).length : 0;
 
-  // Unpushed commits (commits on HEAD not on @{upstream})
+  // Commits ahead of / behind @{upstream}
   let unpushed = 0;
-  const upstreamCheck = run('git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null');
-  if (upstreamCheck) {
-    const countStr = run('git rev-list --count @{u}..HEAD --no-optional-locks');
-    unpushed = parseInt(countStr, 10) || 0;
+  let behind   = 0;
+  if (run(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])) {
+    unpushed = parseInt(run(['--no-optional-locks', 'rev-list', '--count', '@{u}..HEAD']), 10) || 0;
+    behind   = parseInt(run(['--no-optional-locks', 'rev-list', '--count', 'HEAD..@{u}']), 10) || 0;
   }
 
-  return { branch, dirtyCount, unpushed };
+  return { branch, dirtyCount, unpushed, behind };
 }
 
 // ── Context window normalization ──────────────────────────────────────────────
@@ -132,22 +122,7 @@ process.stdin.on('end', () => {
     let ctxPart = '';
     const remaining = data.context_window?.remaining_percentage;
     if (remaining != null) {
-      const used = normalizeContextUsed(remaining);
-
-      // Write bridge file for context-monitor PostToolUse hook
-      if (session) {
-        try {
-          const bridgePath = path.join(os.tmpdir(), `claude-ctx-${session}.json`);
-          fs.writeFileSync(bridgePath, JSON.stringify({
-            session_id: session,
-            remaining_percentage: remaining,
-            used_pct: used,
-            timestamp: Math.floor(Date.now() / 1000),
-          }));
-        } catch (_) {}
-      }
-
-      ctxPart = metricBar('CTX', used, 8);
+      ctxPart = metricBar('CTX', normalizeContextUsed(remaining), 8);
     }
 
     // ── Token counts (session cumulative) ────────────────────────────────────
@@ -214,21 +189,6 @@ process.stdin.on('end', () => {
       } catch (_) {}
     }
 
-    // ── GSD update available? ──────────────────────────────────────────────
-    // Rendered as a distinct badge before the left section — never merged
-    // into model name so it's visually separate and easy to spot.
-    let gsdBadge = '';
-    const cacheFile = path.join(claudeDir, 'cache', 'gsd-update-check.json');
-    if (fs.existsSync(cacheFile)) {
-      try {
-        const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-        if (cache.update_available) {
-          // Bold yellow badge with clear separator after it
-          gsdBadge = bold(yellow('⬆ /gsd:update')) + mutedGray(' ╱ ');
-        }
-      } catch (_) {}
-    }
-
     // ── Git info ───────────────────────────────────────────────────────────
     let gitPart = '';
     const gitCwd = data.cwd || dir;
@@ -244,18 +204,20 @@ process.stdin.on('end', () => {
         gitPart += ` ${mutedGray('·')} ${mutedGray('clean')}`;
       }
 
-      // Unpushed commits
+      // Unpushed / behind commits
       if (git.unpushed > 0) {
         gitPart += ` ${mutedGray('·')} ${cyan(bold('↑'))}${white(String(git.unpushed))}`;
+      }
+      if (git.behind > 0) {
+        gitPart += ` ${mutedGray('·')} ${cyan(bold('↓'))}${white(String(git.behind))}`;
       }
     }
 
     // ── Assemble output ────────────────────────────────────────────────────
-    // Line 1: [⬆ /gsd:update ╱ ] ModelName │ active task │ dirname  ║  CTX ████░░░░  nn%  5H ████░░  nn% ↺HH:MM  7D ████░░  nn%
-    // Line 2: GIT branch  ~ n  ↑ n  ·  IN nn.nk  OUT nn.nk
+    // Line 1: ModelName │ active task │ dirname │ CTX ████░░░░ nn% · 5H ████░░ nn% ↺HH:MM · 7D ████░░ nn%
+    // Line 2: GIT branch · ~n · ↑n · ↓n  ·  TOK IN nn.nk · OUT nn.nk
     //
     // Visual hierarchy:
-    //   - GSD badge: bold amber (attention-grabbing)
     //   - Model: soft blue (ambient context)
     //   - Task: bold amber (most important left-side info when present)
     //   - Dir: bright white (primary navigation anchor)
@@ -264,12 +226,11 @@ process.stdin.on('end', () => {
     //   - Bars + percentages: usage-colored (state at a glance)
     //   - Git branch/counts: bright white values, cyan labels
 
-    const sep      = mutedGray(' │ ');
-    const thickSep = mutedGray(' │ ');
-    const dotSep   = mutedGray(' · ');
+    const sep    = mutedGray(' │ ');
+    const dotSep = mutedGray(' · ');
 
     const leftParts = [
-      gsdBadge + softBlue(model),
+      softBlue(model),
       task ? bold(yellow(task)) : null,
       white(dirname),
     ].filter(Boolean).join(sep);
@@ -279,7 +240,7 @@ process.stdin.on('end', () => {
       .join(dotSep);
 
     const line1 = rightParts
-      ? leftParts + thickSep + rightParts
+      ? leftParts + sep + rightParts
       : leftParts;
 
     // Line 2: git + tokens (only rendered when there is something to show)

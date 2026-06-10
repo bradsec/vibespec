@@ -10,6 +10,12 @@ if [[ ! -f "$CONFIG" ]]; then
     exit 0
 fi
 
+if ! command -v python3 &>/dev/null; then
+    echo "Error: python3 is required to update $CONFIG safely." >&2
+    echo "Manually remove the status_line entry from the [tui] section of $CONFIG." >&2
+    exit 1
+fi
+
 # Remove status_line from [tui] only. This restores the Codex default without
 # touching similarly named keys in other sections.
 python3 - "$CONFIG" <<'PYEOF'

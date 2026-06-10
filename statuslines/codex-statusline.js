@@ -34,7 +34,7 @@
 //
 // Until then, use the enum-based config (see codex-install.sh).
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const path = require('path');
 
 // ── Visual helpers ─────────────────────────────────────────────────────────────
@@ -69,19 +69,22 @@ function metricBar(label, pct, segments) {
 
 // ── Git status ─────────────────────────────────────────────────────────────────
 
+// execFileSync with argument arrays: no shell involved, fixed arguments only.
+// --no-optional-locks is a global git flag, so it goes before the subcommand.
 function getGitInfo(cwd) {
   const opts = { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] };
-  try { execSync('git rev-parse --git-dir', opts); } catch (_) { return null; }
-  const run = cmd => { try { return execSync(cmd, opts).trim(); } catch (_) { return ''; } };
-  const branch = run('git symbolic-ref --short HEAD') || run('git rev-parse --short HEAD') || '?';
-  const statusLines = run('git status --porcelain --no-optional-locks');
+  const run = args => { try { return execFileSync('git', args, opts).trim(); } catch (_) { return null; } };
+  if (run(['rev-parse', '--git-dir']) === null) return null;
+  const branch = run(['symbolic-ref', '--short', 'HEAD']) || run(['rev-parse', '--short', 'HEAD']) || '?';
+  const statusLines = run(['--no-optional-locks', 'status', '--porcelain']) || '';
   const dirtyCount  = statusLines ? statusLines.split('\n').filter(Boolean).length : 0;
   let unpushed = 0;
-  const upstream = run('git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null');
-  if (upstream) {
-    unpushed = parseInt(run('git rev-list --count @{u}..HEAD --no-optional-locks'), 10) || 0;
+  let behind   = 0;
+  if (run(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])) {
+    unpushed = parseInt(run(['--no-optional-locks', 'rev-list', '--count', '@{u}..HEAD']), 10) || 0;
+    behind   = parseInt(run(['--no-optional-locks', 'rev-list', '--count', 'HEAD..@{u}']), 10) || 0;
   }
-  return { branch, dirtyCount, unpushed };
+  return { branch, dirtyCount, unpushed, behind };
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
@@ -157,6 +160,9 @@ process.stdin.on('end', () => {
       }
       if (git.unpushed > 0) {
         gitPart += ` ${mutedGray('·')} ${cyan(bold('↑'))}${white(String(git.unpushed))}`;
+      }
+      if (git.behind > 0) {
+        gitPart += ` ${mutedGray('·')} ${cyan(bold('↓'))}${white(String(git.behind))}`;
       }
     } else if (gitBranch) {
       gitPart = `${cyan(bold('GIT'))} ${white(gitBranch)}`;

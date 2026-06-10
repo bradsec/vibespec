@@ -29,6 +29,13 @@ chmod +x "$HOOK_DEST"
 echo "Installed: $HOOK_DEST"
 
 # Configure enum-based tui.status_line in config.toml
+if ! command -v python3 &>/dev/null; then
+    echo "Error: python3 is required to update $CONFIG safely." >&2
+    echo "Install python3, or add this manually under [tui] in $CONFIG:" >&2
+    echo '  status_line = ["model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "git-branch", "current-dir"]' >&2
+    exit 1
+fi
+
 mkdir -p "$(dirname "$CONFIG")"
 touch "$CONFIG"
 
