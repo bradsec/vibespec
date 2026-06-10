@@ -73,7 +73,9 @@ install_config() {
         rm -f "$new_file"
         print_message success "Rules already up to date: ${dest}"
         record_install "config:$(slugify "$tool")" "config" "RULES.md" "$dest"
-        [[ -n "${TOOL_RESTART[$tool]:-}" ]] && print_message info "${TOOL_RESTART[$tool]}"
+        if [[ -n "${TOOL_RESTART[$tool]:-}" ]]; then
+        print_message info "${TOOL_RESTART[$tool]}"
+    fi
         return
     fi
 
@@ -88,7 +90,9 @@ install_config() {
     mv "$new_file" "$dest"
     print_message success "Rules installed: ${dest}"
     record_install "config:$(slugify "$tool")" "config" "RULES.md" "$dest"
-    [[ -n "${TOOL_RESTART[$tool]:-}" ]] && print_message info "${TOOL_RESTART[$tool]}"
+    if [[ -n "${TOOL_RESTART[$tool]:-}" ]]; then
+        print_message info "${TOOL_RESTART[$tool]}"
+    fi
 }
 
 main() {

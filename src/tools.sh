@@ -192,7 +192,9 @@ remove_system_path_residue() {
         fi
     done
 
-    [[ "$found" -eq 0 ]] && print_message info "No tool binaries remain at system paths."
+    if [[ "$found" -eq 0 ]]; then
+        print_message info "No tool binaries remain at system paths."
+    fi
 }
 
 uninstall_all_coding_cli_tools() {

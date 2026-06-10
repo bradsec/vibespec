@@ -111,8 +111,8 @@ PY
 confirm() {
     local prompt="${1:-Are you sure?}"
     local reply
-    printf '%b%s [y/N]: %b' "${YELLOW}" "${prompt}" "${NC}" > /dev/tty
-    read -r reply < /dev/tty 2>/dev/null || reply=""
+    printf '%b%s [y/N]: %b' "${YELLOW}" "${prompt}" "${NC}" 2>/dev/null > /dev/tty || true
+    read -r reply 2>/dev/null < /dev/tty || reply=""
     [[ "${reply,,}" == "y" ]]
 }
 
@@ -122,8 +122,8 @@ confirm_word() {
     local word="${1:-CONFIRM}"
     local prompt="${2:-Type ${word} to proceed}"
     local reply
-    printf '%b%s: %b' "${G_RED}" "${prompt}" "${NC}" > /dev/tty
-    read -r reply < /dev/tty 2>/dev/null || reply=""
+    printf '%b%s: %b' "${G_RED}" "${prompt}" "${NC}" 2>/dev/null > /dev/tty || true
+    read -r reply 2>/dev/null < /dev/tty || reply=""
     [[ "${reply}" == "${word}" ]]
 }
 
@@ -149,8 +149,8 @@ remove_path_under_home() {
 }
 
 pause() {
-    printf '%bPress Enter to continue...%b' "${CYAN}" "${NC}" > /dev/tty
-    read -r _ < /dev/tty 2>/dev/null || true
+    printf '%bPress Enter to continue...%b' "${CYAN}" "${NC}" 2>/dev/null > /dev/tty || true
+    read -r _ 2>/dev/null < /dev/tty || true
 }
 
 # Run an install function, warn on failure, then pause.
