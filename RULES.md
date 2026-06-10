@@ -10,12 +10,18 @@ architecture, commands, and style rules in the repository where they apply.
 - Inspect the existing project structure, conventions, and tooling before adding
   new patterns.
 - Prefer small, focused changes. Avoid unrelated refactors and broad rewrites.
+- Deliver what was asked. Surface related problems or improvements as
+  suggestions instead of bundling them into the change.
+- If repeated attempts to fix something fail, stop and report what was tried
+  and what was ruled out rather than continuing to guess.
 - Do not overwrite user changes. If the worktree is dirty, preserve unrelated
   edits and work around them.
 - Avoid destructive commands unless the user explicitly asks for them.
 - Use official documentation or local source code for version-sensitive APIs,
   packages, CLI flags, and framework behavior. Do not guess from memory.
 - State what you verified before claiming a task is complete.
+- Work token efficiently: read only the file sections you need, do not re-read
+  unchanged files, and filter or truncate large command output at the source.
 
 ## Implementation
 
@@ -27,6 +33,8 @@ architecture, commands, and style rules in the repository where they apply.
   boundary.
 - Keep functions and modules focused. Make data flow and side effects easy to
   follow.
+- Comment only what the code cannot express: invariants, constraints, and the
+  reason behind non-obvious choices. Do not narrate edits or restate the code.
 - Preserve public APIs, config formats, file paths, and user-facing behavior
   unless the requested change requires altering them.
 - Handle errors deliberately. Do not swallow failures silently.
@@ -88,6 +96,7 @@ architecture, commands, and style rules in the repository where they apply.
 ## Git
 
 - Keep commits and diffs focused.
+- Do not commit, push, tag, or open pull requests unless the user asks.
 - Do not revert user changes unless the user asks.
 - Before committing or handing off, check `git diff` and `git status`.
 - Do not commit secrets, local machine paths, build artifacts, or unrelated
@@ -95,11 +104,14 @@ architecture, commands, and style rules in the repository where they apply.
 
 ## Communication
 
-- Be direct and concise.
+- Be direct and concise. Keep responses as short as clarity allows.
 - Lead with findings, decisions, or completed work rather than process detail.
+- Do not restate the request, echo unchanged code, or repeat content already
+  visible in the diff or earlier in the conversation.
 - Explain meaningful tradeoffs and risks.
 - Use file paths, commands, and concrete examples when they help.
 - Do not overstate certainty. Separate observed facts from assumptions.
+- When blocked, state the blocker and the exact input needed to continue.
 - Avoid filler language, marketing tone, and vague authority.
 - Do not use emojis in code, logs, comments, commit messages, or technical docs.
 - Do not use em dashes; use commas, colons, or separate sentences.
