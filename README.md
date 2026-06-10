@@ -34,7 +34,7 @@ The menu uses local scripts when the repo is cloned. When run directly from GitH
 
 ## AI coding rules (`RULES.md`)
 
-`RULES.md` is the source-of-truth instruction file deployed to all AI coding tools. It covers: behavioral guidelines, code quality, security, Go, Python, JavaScript, Shell, Git, Docker, AI/Automation.
+`RULES.md` is the source-of-truth instruction file deployed to all AI coding tools. It covers: working style, implementation, testing and verification, security and safety, dependencies and tooling, documentation, Git, and communication.
 
 Each tool receives a copy with its first line set to `# <filename>` (e.g. `# CLAUDE.md`, `# AGENTS.md`).
 
@@ -87,6 +87,22 @@ All statusline scripts live in `statuslines/`.
 | Antigravity CLI | Installs a documented command-backed statusline showing context usage, agent state, git status, and token counts. |
 
 The statusline menu also includes reset actions to restore each tool's original statusline behavior. Resets remove only the statusline-related setting for the selected tool and leave unrelated config keys intact.
+
+## Development
+
+Run the test suite:
+
+```bash
+bash tests/config-rules.sh
+bash tests/install-state.sh
+bash tests/statusline-installers.sh
+```
+
+Lint the shell scripts:
+
+```bash
+shellcheck vibespec.sh src/*.sh statuslines/*.sh tests/*.sh
+```
 
 ## License
 
