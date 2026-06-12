@@ -22,6 +22,10 @@ architecture, commands, and style rules in the repository where they apply.
 - State what you verified before claiming a task is complete.
 - Work token efficiently: read only the file sections you need, do not re-read
   unchanged files, and filter or truncate large command output at the source.
+- Match model capability to task complexity. When the tooling allows model
+  selection, run trivial or mechanical work, and any subagents dispatched for
+  it, on a smaller, cheaper model. Reserve the most capable model for design,
+  debugging, and complex reasoning.
 
 ## Implementation
 
@@ -97,6 +101,9 @@ architecture, commands, and style rules in the repository where they apply.
 
 - Keep commits and diffs focused.
 - Do not commit, push, tag, or open pull requests unless the user asks.
+- Author commits under the user's configured git identity only. Do not add AI
+  agent names, co-author trailers, or tool attributions to commit messages or
+  pull requests.
 - Do not revert user changes unless the user asks.
 - Before committing or handing off, check `git diff` and `git status`.
 - Do not commit secrets, local machine paths, build artifacts, or unrelated
