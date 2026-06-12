@@ -9,6 +9,9 @@ architecture, commands, and style rules in the repository where they apply.
   concise question or state the assumption you will use.
 - Inspect the existing project structure, conventions, and tooling before adding
   new patterns.
+- When given a task, check whether an available skill, subagent, or connected
+  tool (such as an MCP server) is designed for it, and use that capability
+  instead of an ad-hoc approach.
 - Prefer small, focused changes. Avoid unrelated refactors and broad rewrites.
 - Deliver what was asked. Surface related problems or improvements as
   suggestions instead of bundling them into the change.
@@ -22,6 +25,10 @@ architecture, commands, and style rules in the repository where they apply.
 - State what you verified before claiming a task is complete.
 - Work token efficiently: read only the file sections you need, do not re-read
   unchanged files, and filter or truncate large command output at the source.
+- Delegate to subagents when the tooling supports them and the work suits it:
+  independent tasks that can run in parallel, broad searches, and steps whose
+  large output would crowd the main context. Keep small sequential edits in
+  the main conversation.
 - Match model capability to task complexity. When the tooling allows model
   selection, run trivial or mechanical work, and any subagents dispatched for
   it, on a smaller, cheaper model. Reserve the most capable model for design,
