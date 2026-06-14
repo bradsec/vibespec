@@ -83,7 +83,24 @@ function getGitInfo(cwd) {
     behind   = parseInt(run(['--no-optional-locks', 'rev-list', '--count', 'HEAD..@{u}']), 10) || 0;
   }
 
-  return { branch, dirtyCount, unpushed, behind };
+  // Remote URL for origin (or first remote if origin absent)
+  let remote = null;
+  const remoteUrl = run(['remote', 'get-url', 'origin']) ||
+                    (() => {
+                      const remotes = run(['remote']);
+                      if (!remotes) return null;
+                      const first = remotes.split('\n').find(Boolean);
+                      return first ? run(['remote', 'get-url', first]) : null;
+                    })();
+  if (remoteUrl) {
+    // Strip trailing .git and protocol prefix for brevity
+    remote = remoteUrl
+      .replace(/\.git$/, '')
+      .replace(/^https?:\/\//, '')
+      .replace(/^git@([^:]+):/, '$1/');
+  }
+
+  return { branch, dirtyCount, unpushed, behind, remote };
 }
 
 // ── Account / plan ──────────────────────────────────────────────────────────
@@ -248,8 +265,8 @@ process.stdin.on('end', () => {
     }
 
     // ── Assemble output ────────────────────────────────────────────────────
-    // Line 1: ModelName │ active task │ dirname │ CTX ████░░░░ nn% · 5H ████░░ nn% ↺HH:MM · 7D ████░░ nn%
-    // Line 2: GIT branch · ~n · ↑n · ↓n  ·  TOK IN nn.nk · OUT nn.nk
+    // Line 1: Name · Plan │ ModelName │ active task │ CTX ████░░░░ nn% · 5H ████░░ nn% ↺HH:MM · 7D ████░░ nn%
+    // Line 2: dirname · remote · GIT branch · ~n · ↑n · ↓n · TOK IN nn.nk · OUT nn.nk
     //
     // Visual hierarchy:
     //   - Model: soft blue (ambient context)
@@ -276,7 +293,6 @@ process.stdin.on('end', () => {
       acctPart,
       softBlue(model),
       task ? bold(yellow(task)) : null,
-      white(dirname),
     ].filter(Boolean).join(sep);
 
     const rightParts = [ctxPart, fiveHourPart, sevenDayPart]
@@ -287,8 +303,13 @@ process.stdin.on('end', () => {
       ? leftParts + sep + rightParts
       : leftParts;
 
-    // Line 2: git + tokens (only rendered when there is something to show)
-    const line2Parts = [gitPart, tokenPart].filter(Boolean).join(dotSep);
+    // Line 2: dir (+ remote) · git · tokens
+    let dirPart = white(dirname);
+    if (git?.remote) {
+      dirPart += dotSep + mutedGray(git.remote);
+    }
+
+    const line2Parts = [dirPart, gitPart, tokenPart].filter(Boolean).join(dotSep);
     const output     = line2Parts
       ? line1 + '\n' + line2Parts
       : line1;
