@@ -86,6 +86,40 @@ function getGitInfo(cwd) {
   return { branch, dirtyCount, unpushed, behind };
 }
 
+// ── Account / plan ──────────────────────────────────────────────────────────
+// Account name and subscription plan are NOT in the statusLine JSON payload
+// (open feature requests anthropics/claude-code#24679, #26219). They live in
+// the global config file ~/.claude.json under `oauthAccount`. Read it directly:
+// docs warn that shelling out to `claude auth whoami` from hooks hangs.
+// Honors CLAUDE_CONFIG_DIR. The field is internal/undocumented, so every access
+// is guarded and a missing file or shape is treated as "no account info".
+function getAccountInfo() {
+  // Single config root, mirroring the todos lookup: an explicit CLAUDE_CONFIG_DIR
+  // wins outright so a different account root never leaks the home account.
+  const configFile = process.env.CLAUDE_CONFIG_DIR
+    ? path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json')
+    : path.join(os.homedir(), '.claude.json');
+
+  try {
+    const acct = JSON.parse(fs.readFileSync(configFile, 'utf8')).oauthAccount;
+    if (!acct) return null;
+
+    const name = acct.displayName || null;
+
+    // organizationType is e.g. "claude_max" / "claude_pro" -> "Max" / "Pro"
+    let plan = null;
+    const t = acct.organizationType;
+    if (typeof t === 'string' && t.startsWith('claude_')) {
+      const word = t.slice('claude_'.length);
+      plan = word.charAt(0).toUpperCase() + word.slice(1);
+    }
+
+    return name || plan ? { name, plan } : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 // ── Context window normalization ──────────────────────────────────────────────
 // Claude Code reserves ~16.5% for autocompact buffer; normalize to show 100%
 // when that buffer is reached (consistent with the existing GSD statusline).
@@ -229,7 +263,17 @@ process.stdin.on('end', () => {
     const sep    = mutedGray(' │ ');
     const dotSep = mutedGray(' · ');
 
+    // Account segment: "Mark · Max" (name white, plan soft green). Leading
+    // position so identity/plan is the first thing read on line 1.
+    const acct = getAccountInfo();
+    const acctPart = acct
+      ? [acct.name ? white(acct.name) : null, acct.plan ? green(acct.plan) : null]
+          .filter(Boolean)
+          .join(dotSep)
+      : null;
+
     const leftParts = [
+      acctPart,
       softBlue(model),
       task ? bold(yellow(task)) : null,
       white(dirname),
