@@ -33,11 +33,11 @@ NC='\033[0m'
 print_message() {
     local type="$1" msg="$2"
     case "$type" in
-        info)    echo -e "${CYAN}[INFO]${NC} ${msg}" ;;
+        info)    echo -e "${GREEN}[INFO]${NC} ${msg}" ;;
         success) echo -e "${GREEN}[OK]${NC} ${msg}" ;;
         warning) echo -e "${YELLOW}[WARN]${NC} ${msg}" ;;
         error)   echo -e "${RED}[ERROR]${NC} ${msg}" >&2 ;;
-        header)  echo -e "\n${BOLD}${BLUE}==> ${msg}${NC}" ;;
+        header)  echo -e "\n${BOLD}${G_GREEN}==> ${msg}${NC}" ;;
     esac
 }
 
@@ -149,7 +149,7 @@ remove_path_under_home() {
 }
 
 pause() {
-    printf '%bPress Enter to continue...%b' "${CYAN}" "${NC}" 2>/dev/null > /dev/tty || true
+    printf '%bPress Enter to continue...%b' "${GREEN}" "${NC}" 2>/dev/null > /dev/tty || true
     read -r _ 2>/dev/null < /dev/tty || true
 }
 
@@ -165,12 +165,11 @@ run_install() {
 
 _vibespec_ascii() {
     echo -e ""
-    echo -e " ${G_BLUE}██╗   ██╗${G_RED}██╗${G_YELLOW}██████╗ ${G_GREEN}███████╗${G_BLUE}███████╗${G_RED}██████╗ ${G_YELLOW}███████╗${G_GREEN} ██████╗${NC}"
-    echo -e " ${G_BLUE}██║   ██║${G_RED}██║${G_YELLOW}██╔══██╗${G_GREEN}██╔════╝${G_BLUE}██╔════╝${G_RED}██╔══██╗${G_YELLOW}██╔════╝${G_GREEN}██╔════╝${NC}"
-    echo -e " ${G_BLUE}██║   ██║${G_RED}██║${G_YELLOW}██████╔╝${G_GREEN}█████╗  ${G_BLUE}███████╗${G_RED}██████╔╝${G_YELLOW}█████╗  ${G_GREEN}██║     ${NC}"
-    echo -e " ${G_BLUE}╚██╗ ██╔╝${G_RED}██║${G_YELLOW}██╔══██╗${G_GREEN}██╔══╝  ${G_BLUE}╚════██║${G_RED}██╔═══╝ ${G_YELLOW}██╔══╝  ${G_GREEN}██║     ${NC}"
-    echo -e " ${G_BLUE} ╚████╔╝ ${G_RED}██║${G_YELLOW}██████╔╝${G_GREEN}███████╗${G_BLUE}███████║${G_RED}██║     ${G_YELLOW}███████╗${G_GREEN}╚██████╗${NC}"
-    echo -e " ${G_BLUE}  ╚═══╝  ${G_RED}╚═╝${G_YELLOW}╚═════╝ ${G_GREEN}╚══════╝${G_BLUE}╚══════╝${G_RED}╚═╝     ${G_YELLOW}╚══════╝${G_GREEN} ╚═════╝ ${NC}"
+    echo -e "${G_GREEN}▐${GREEN}▄▄${GREEN}▌${G_GREEN}  ▐${GREEN}▄▄${GREEN}▌${G_GREEN}▐${GREEN}▄▄▄▄▄▄▄▄${GREEN}▌${G_GREEN}▐${GREEN}▄▄▄▄▄▄▄${GREEN}▌${G_GREEN}  ▐${GREEN}▄▄▄▄▄▄▄${GREEN}▌${G_GREEN} ▐${GREEN}▄▄▄▄▄▄▄${GREEN}▌${G_GREEN}▐${GREEN}▄▄▄▄▄▄▄${GREEN}▌${G_GREEN}  ▐${GREEN}▄▄▄▄▄▄▄${GREEN}▌${G_GREEN} ▐${GREEN}▄▄▄▄▄▄▄${GREEN}▌${NC}"
+    echo -e "${G_GREEN}▐${GREEN}██${GREEN}▌${G_GREEN}  ▐${GREEN}██${GREEN}▌${G_GREEN}   ▐${GREEN}██${GREEN}▌${G_GREEN}   ▐${GREEN}██${GREEN}▌${G_GREEN}  ▐${GREEN}██${GREEN}▌${G_GREEN}▐${GREEN}██${GREEN}▌${G_GREEN}      ▐${GREEN}██${GREEN}▌${G_GREEN}      ▐${GREEN}██${GREEN}▌${G_GREEN}  ▐${GREEN}██${GREEN}▌${G_GREEN}▐${GREEN}██${GREEN}▌${G_GREEN}      ▐${GREEN}██${GREEN}▌${G_GREEN}      ${NC}"
+    echo -e "${G_GREEN}▐${GREEN}██${GREEN}▌${G_GREEN}  ▐${GREEN}██${GREEN}▌${G_GREEN}   ▐${GREEN}██${GREEN}▌${G_GREEN}   ▐${GREEN}██${GREEN}▌${G_GREEN}▐${GREEN}█${GREEN}██${GREEN}▌${G_GREEN} ▐${GREEN}██████${GREEN}▌${G_GREEN}   ▐${GREEN}██████${GREEN}▌${G_GREEN} ▐${GREEN}██${GREEN}▌${G_GREEN}▐${GREEN}█${GREEN}██${GREEN}▌${G_GREEN} ▐${GREEN}██████${GREEN}▌${G_GREEN}  ▐${GREEN}██${GREEN}▌${G_GREEN}      ${NC}"
+    echo -e "${GREEN}▐${G_GREEN}▀▀${GREEN}▌${G_GREEN}  ${GREEN}▐${G_GREEN}▀▀${GREEN}▌${G_GREEN}   ${GREEN}▐${G_GREEN}▀▀${GREEN}▌${G_GREEN}   ${GREEN}▐${G_GREEN}▀▀${GREEN}▌${G_GREEN}  ${GREEN}▐${G_GREEN}▀▀${GREEN}▌${GREEN}▐${G_GREEN}▀▀${GREEN}▌${G_GREEN}            ${GREEN}▐${G_GREEN}▀▀${GREEN}▌${GREEN}▐${G_GREEN}▀▀${GREEN}▌${G_GREEN}      ${GREEN}▐${G_GREEN}▀▀${GREEN}▌${G_GREEN}      ${GREEN}▐${G_GREEN}▀▀${GREEN}▌${G_GREEN}      ${NC}"
+    echo -e "${G_GREEN} ${GREEN}▐${GREEN}▄▄▄▄▄▄${GREEN}▌${G_GREEN} ${GREEN}▐${GREEN}▄▄▄▄▄▄▄▄${GREEN}▌${GREEN}▐${GREEN}▄▄▄▄▄▄▄${GREEN}▌${G_GREEN}  ${GREEN}▐${GREEN}▄▄▄▄▄▄▄${GREEN}▌${GREEN}▐${GREEN}▄▄▄▄▄▄▄${GREEN}▌${G_GREEN} ${GREEN}▐${GREEN}▄▄${GREEN}▌${G_GREEN}       ${GREEN}▐${GREEN}▄▄▄▄▄▄▄${GREEN}▌${G_GREEN} ${GREEN}▐${GREEN}▄▄▄▄▄▄▄${GREEN}▌${NC}"
     echo -e ""
 }
 
@@ -193,13 +192,13 @@ menu_select() {
     if ! { true < "${tty}"; } 2>/dev/null || ! { true > "${tty}"; } 2>/dev/null; then
         {
             _vibespec_ascii
-            echo -e "  ${BOLD}${BLUE}${title}${NC}"
+            echo -e "  ${BOLD}${G_GREEN}${title}${NC}"
             echo
             for idx in "${!options[@]}"; do
-                printf "  %2d) %s\n" "$((idx + 1))" "${options[$idx]}"
+                printf "  ${GREEN}%2d) %s${NC}\n" "$((idx + 1))" "${options[$idx]}"
             done
             echo
-            printf "  Select [1-%d]: " "${options_count}"
+            printf "  ${GREEN}Select [1-%d]: ${NC}" "${options_count}"
         } >&2
         local choice
         read -r choice
@@ -211,10 +210,10 @@ menu_select() {
         for idx in "${!options[@]}"; do
             printf "\033[2K" > "${tty}"
             if [[ "${idx}" -eq "${selected}" ]]; then
-                printf "  ${BOLD}${GREEN}>  %2d)${NC} ${BOLD}%s${NC}\n" \
+                printf "  ${BOLD}${GREEN}>  %2d)${NC} ${BOLD}${GREEN}%s${NC}\n" \
                     "$((idx + 1))" "${options[$idx]}" > "${tty}"
             else
-                printf "     %2d)  %s\n" "$((idx + 1))" "${options[$idx]}" > "${tty}"
+                printf "     ${GREEN}%2d)  %s${NC}\n" "$((idx + 1))" "${options[$idx]}" > "${tty}"
             fi
         done
     }
@@ -222,9 +221,9 @@ menu_select() {
     {
         clear
         _vibespec_ascii
-        echo -e "  ${BOLD}${BLUE}${title}${NC}"
-        echo -e "  ${BLUE}$(printf '─%.0s' $(seq 1 50))${NC}"
-        echo -e "  ${CYAN}↑↓ or j/k to navigate  ·  Enter to select  ·  q to quit${NC}"
+        echo -e "  ${BOLD}${G_GREEN}${title}${NC}"
+        echo -e "  ${GREEN}$(printf '─%.0s' $(seq 1 50))${NC}"
+        echo -e "  ${GREEN}↑↓ or j/k to navigate  ·  Enter to select  ·  q to quit${NC}"
         echo
     } > "${tty}"
     _draw_items
