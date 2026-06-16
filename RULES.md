@@ -29,10 +29,17 @@ architecture, commands, and style rules in the repository where they apply.
   independent tasks that can run in parallel, broad searches, and steps whose
   large output would crowd the main context. Keep small sequential edits in
   the main conversation.
+- Ask subagents for conclusions, uncertainty, file paths, and line references,
+  not full transcripts. Verify their claims before relying on them.
+- Give subagents only the context they need. Avoid passing history unless it is
+  essential, since it can bias results.
+- Run subagents in parallel only when their targets are disjoint. Sequence any
+  that might write the same files.
 - Match model capability to task complexity. When the tooling allows model
   selection, run trivial or mechanical work, and any subagents dispatched for
   it, on a smaller, cheaper model. Reserve the most capable model for design,
-  debugging, and complex reasoning.
+  debugging, and complex reasoning. Scale effort to labor volume, model tier to
+  comprehension difficulty.
 
 ## Implementation
 
