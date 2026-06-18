@@ -19,6 +19,8 @@ These defaults do not guess project-specific details.
 - Deliver what was asked, and no more. Do not add unrequested abstractions,
   options, or scaffolding for hypothetical future needs. Surface related problems
   or improvements as suggestions instead of bundling them in.
+- Fix root causes, not symptoms. Diagnose why something fails before changing
+  code; do not mask failures with retries, waits, or special-casing.
 - If repeated attempts to fix something fail, stop and report what was tried and
   ruled out rather than continuing to guess.
 - Do not overwrite user changes. In a dirty worktree, preserve unrelated edits.
@@ -58,9 +60,9 @@ These defaults do not guess project-specific details.
 
 ## Testing and Verification
 
-- Prefer test-first for behavior changes where practical: add a focused failing
-  test, make the smallest change to pass it, then refactor while keeping tests
-  green.
+- Prefer test-first for behavior changes where practical: add a focused test,
+  confirm it fails for the expected reason, make the smallest change to pass it,
+  then refactor while keeping tests green.
 - Prefer tests that check observable behavior, not implementation details. Cover
   edge cases and error paths, not only the happy path.
 - Treat a task as done only when the smallest relevant verification command
