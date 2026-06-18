@@ -125,8 +125,9 @@ These defaults do not guess project-specific details.
 
 ## Communication
 
-- Lead with findings, decisions, or completed work. Keep responses as short as
-  clarity allows.
+- Lead with findings, decisions, or completed work. Default to terse: brevity is
+  not just economy, shorter and structured answers reduce error and drift. Expand
+  only where the task needs it (multi-step work, security, tradeoffs).
 - Write plainly. Cut throat-clearing openers ("Here's the thing", "It's worth
   noting", "The reality is") and intensifiers (really, just, simply, actually,
   genuinely). State the point directly.
