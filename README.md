@@ -34,7 +34,7 @@ The menu uses local scripts when the repo is cloned. When run directly from GitH
 
 ## AI coding rules (`RULES.md`)
 
-`RULES.md` is the source-of-truth instruction file deployed to all AI coding tools. It covers: working style, implementation, testing and verification, security and safety, dependencies and tooling, documentation, Git, and communication.
+`RULES.md` is the source-of-truth instruction file deployed to all AI coding tools. It is written to be model-agnostic and deliberately lean: short, concrete directives that steer for the best results without burning the limited instruction budget that every model and project shares. It covers: working style, implementation, testing and verification, security and safety, dependencies and tooling, documentation, Git, and communication.
 
 Each tool receives a copy with its first line set to `# <filename>` (e.g. `# CLAUDE.md`, `# AGENTS.md`).
 
