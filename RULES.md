@@ -46,6 +46,8 @@ These defaults do not guess project-specific details.
 ## Implementation
 
 - Match the existing style and conventions of the surrounding code.
+- For user-facing UI without an established project style, derive layout, type,
+  and color from the brief and product context. Avoid generic template defaults.
 - Prefer simple, explicit logic over clever abstractions. Add an abstraction only
   when it removes real duplication or clarifies a stable boundary.
 - Use the standard library and existing project dependencies before adding new
