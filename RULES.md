@@ -16,8 +16,9 @@ These defaults do not guess project-specific details.
   for the task, use it instead of an ad-hoc approach.
 - Make small, focused changes. Do not reformat, rename, or reorganize unrelated
   code while making a focused change.
-- Deliver what was asked. Surface related problems or improvements as suggestions
-  instead of bundling them in.
+- Deliver what was asked, and no more. Do not add unrequested abstractions,
+  options, or scaffolding for hypothetical future needs. Surface related problems
+  or improvements as suggestions instead of bundling them in.
 - If repeated attempts to fix something fail, stop and report what was tried and
   ruled out rather than continuing to guess.
 - Do not overwrite user changes. In a dirty worktree, preserve unrelated edits.
