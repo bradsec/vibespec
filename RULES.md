@@ -122,6 +122,11 @@ These defaults do not guess project-specific details.
 
 - Lead with findings, decisions, or completed work. Keep responses as short as
   clarity allows.
+- Write plainly. Cut throat-clearing openers ("Here's the thing", "It's worth
+  noting", "The reality is") and intensifiers (really, just, simply, actually,
+  genuinely). State the point directly.
+- Prefer active voice and name the actor: "the parser rejects X", not "X is
+  rejected". Avoid passive constructions that hide who or what acts.
 - Do not restate the request or echo unchanged code already visible in the diff.
 - Explain meaningful tradeoffs and risks.
 - Do not overstate certainty. Separate observed facts from assumptions.
