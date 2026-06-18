@@ -2,11 +2,15 @@
 
 Use these as default instructions for coding agents. Keep project-specific
 architecture, commands, and style rules in the repository where they apply.
+Project files should define concrete setup, test, lint, build, architecture,
+and style commands. These defaults should not guess those details.
 
 ## Working Style
 
 - Understand the request before changing files. If the goal is ambiguous, ask a
   concise question or state the assumption you will use.
+- Follow the most specific applicable instruction. Repository, directory, or
+  user instructions override these defaults when they conflict.
 - Inspect the existing project structure, conventions, and tooling before adding
   new patterns.
 - When given a task, check whether an available skill, subagent, or connected
@@ -36,15 +40,15 @@ architecture, commands, and style rules in the repository where they apply.
 - Run subagents in parallel only when their targets are disjoint. Sequence any
   that might write the same files.
 - Match model capability to task complexity. When the tooling allows model
-  selection, run trivial or mechanical work, and any subagents dispatched for
-  it, on a smaller, cheaper model. Reserve the most capable model for design,
-  debugging, and complex reasoning. Scale effort to labor volume, model tier to
-  comprehension difficulty.
+  selection, use smaller or faster models for trivial work and stronger models
+  for design, debugging, and complex reasoning.
 
 ## Implementation
 
 - Write clear, maintainable code that matches the existing style.
 - Prefer simple, explicit logic over clever abstractions.
+- Do not reformat, rename, or reorganize unrelated code while making a focused
+  change.
 - Use the standard library and existing project dependencies before adding new
   packages.
 - Add an abstraction only when it removes real duplication or clarifies a stable
@@ -61,11 +65,16 @@ architecture, commands, and style rules in the repository where they apply.
 
 ## Testing and Verification
 
+- Prefer test-first changes for features, bug fixes, refactors, and behavior
+  changes: add or update a focused failing test, make the smallest code change
+  to pass it, then refactor while keeping tests green.
 - Add or update tests for behavior changes when the project has a practical test
   path.
 - Prefer tests that check observable behavior rather than implementation details.
 - Cover important edge cases and error paths, not only the happy path.
 - Run the smallest relevant verification command before reporting success.
+- When a command fails, inspect the relevant error output before retrying or
+  changing approach.
 - If a test or command cannot be run, explain why and name the closest useful
   verification.
 - Do not delete, skip, or weaken tests to make a failure disappear. Fix the code
@@ -86,6 +95,8 @@ architecture, commands, and style rules in the repository where they apply.
   matters.
 - Never hardcode or commit secrets. Avoid logging tokens, credentials, personal
   data, and sensitive payloads.
+- Do not create, modify, or rely on local secrets or machine-specific config
+  unless the task explicitly requires it.
 - Use established cryptography, TLS verification, and secure randomness. Do not
   invent crypto.
 - Keep production defaults safe: no debug modes, broad CORS, permissive auth, or
@@ -100,6 +111,9 @@ architecture, commands, and style rules in the repository where they apply.
 - When adding a dependency, explain why existing tools are insufficient.
 - Respect project formatting, linting, and build commands. If none are obvious,
   use conservative language defaults.
+- Avoid interactive commands in automation. Use non-interactive flags when
+  available, and do not leave long-running processes active unless they are
+  needed for verification.
 
 ## Documentation
 
