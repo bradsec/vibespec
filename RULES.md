@@ -81,8 +81,9 @@ These defaults do not guess project-specific details.
 - Treat external input, files, network responses, environment variables, and
   command arguments as untrusted.
 - Validate input for type, length, format, and range. Prefer allowlists.
-- Use parameterized APIs for SQL, shell commands, templates, and serializers.
-- Avoid `eval`, dynamic execution, and shell interpolation on untrusted input.
+- Prevent injection: use parameterized APIs for SQL, shell commands, templates,
+  and serializers; never `eval`, dynamically execute, or interpolate untrusted
+  input into commands.
 - Encode output for its destination context.
 - Confine filesystem access to intended paths. Normalize paths before enforcing
   directory boundaries.
@@ -118,7 +119,6 @@ These defaults do not guess project-specific details.
 - Do not commit, push, tag, or open pull requests unless the user asks.
 - Author commits under the user's configured git identity only. Do not add AI
   agent names, co-author trailers, or tool attributions.
-- Do not revert user changes unless the user asks.
 - Check `git diff` and `git status` before committing or handing off.
 - Do not commit secrets, local machine paths, build artifacts, or unrelated
   generated files.
