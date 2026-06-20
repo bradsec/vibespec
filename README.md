@@ -82,9 +82,11 @@ All statusline scripts live in `statuslines/`.
 
 | Tool | Current behavior |
 |------|------------------|
-| Claude Code | Installs a documented command-backed statusline showing context usage, rate limits, git status, and token counts. |
+| Claude Code | Installs a documented command-backed statusline showing context usage, rate limits, git status, token counts, and cache hit rate. |
 | Codex | Installs the local formatter script and configures supported built-in `tui.status_line` items in `~/.codex/config.toml`. Command-backed custom statuslines are not supported yet. |
-| Antigravity CLI | Installs a documented command-backed statusline showing context usage, agent state, git status, and token counts. |
+| Antigravity CLI | Installs a documented command-backed statusline showing context usage, agent state, git status, token counts, and cache hit rate. |
+
+The `CACHE` segment shows the prompt-cache hit rate for the current turn: the share of input tokens served from cache rather than reprocessed. A high rate (green) means cheaper, faster turns; a low rate (red) means more of the context was reprocessed. It is hidden when the host does not report cache token fields.
 
 The statusline menu also includes reset actions to restore each tool's original statusline behavior. Resets remove only the statusline-related setting for the selected tool and leave unrelated config keys intact.
 
