@@ -52,6 +52,34 @@ function metricBar(label, pct, segments) {
   return `${cyan(bold(label))} ${filledBar}${emptyBar} ${pctStr}`;
 }
 
+// Cache hit-rate bar: like metricBar but the color ramp is inverted because a
+// HIGH hit rate is healthy (cheap, fast) while a low one is not. Coloring by
+// (100 - pct) reuses the usageColor ramp so 90% hit reads green, 10% reads red.
+function cacheBar(label, pct, segments) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const filled  = Math.round((clamped / 100) * segments);
+  const empty   = segments - filled;
+  const inv      = 100 - clamped;
+  const filledBar = usageColor(inv, '█'.repeat(filled));
+  const emptyBar  = mutedGray('░'.repeat(empty));
+  const pctStr    = bold(usageColor(inv, String(Math.round(clamped)) + '%'));
+  return `${cyan(bold(label))} ${filledBar}${emptyBar} ${pctStr}`;
+}
+
+// Cache hit rate for the current turn: fraction of input tokens served from the
+// prompt cache. Denominator is all input tokens (fresh + cache read + cache
+// write). current_usage is per-turn, so this reflects the last turn, not the
+// cumulative session. Returns null when the fields are absent or no input yet.
+function cacheHitRate(currentUsage) {
+  if (!currentUsage) return null;
+  const fresh = currentUsage.input_tokens || 0;
+  const read  = currentUsage.cache_read_input_tokens || 0;
+  const write = currentUsage.cache_creation_input_tokens || 0;
+  const total = fresh + read + write;
+  if (total <= 0) return null;
+  return (read / total) * 100;
+}
+
 // ── Git status ────────────────────────────────────────────────────────────────
 // Returns null when cwd is not inside a git repo (or git is not available).
 // execFileSync with argument arrays: no shell involved, fixed arguments only.
@@ -189,6 +217,13 @@ process.stdin.on('end', () => {
       tokenPart = `${cyan(bold('TOK'))} ${cyan(bold('IN'))} ${white(fmtTokens(totalIn))} ${mutedGray('·')} ${cyan(bold('OUT'))} ${white(fmtTokens(totalOut))}`;
     }
 
+    // ── Cache hit rate (current turn) ─────────────────────────────────────────
+    let cachePart = '';
+    const hitRate = cacheHitRate(data.context_window?.current_usage);
+    if (hitRate != null) {
+      cachePart = cacheBar('CACHE', hitRate, 6);
+    }
+
     // ── Rate limit bars (claude.ai subscription only) ──────────────────────
     let fiveHourPart = '';
     let sevenDayPart = '';
@@ -266,7 +301,7 @@ process.stdin.on('end', () => {
 
     // ── Assemble output ────────────────────────────────────────────────────
     // Line 1: Name · Plan │ ModelName │ active task │ CTX ████░░░░ nn% · 5H ████░░ nn% ↺HH:MM · 7D ████░░ nn%
-    // Line 2: dirname · remote · GIT branch · ~n · ↑n · ↓n · TOK IN nn.nk · OUT nn.nk
+    // Line 2: dirname · remote · GIT branch · ~n · ↑n · ↓n · TOK IN nn.nk · OUT nn.nk · CACHE ████░░ nn%
     //
     // Visual hierarchy:
     //   - Model: soft blue (ambient context)
@@ -309,7 +344,7 @@ process.stdin.on('end', () => {
       dirPart += dotSep + mutedGray(git.remote);
     }
 
-    const line2Parts = [dirPart, gitPart, tokenPart].filter(Boolean).join(dotSep);
+    const line2Parts = [dirPart, gitPart, tokenPart, cachePart].filter(Boolean).join(dotSep);
     const output     = line2Parts
       ? line1 + '\n' + line2Parts
       : line1;

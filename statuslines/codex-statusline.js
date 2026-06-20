@@ -67,6 +67,31 @@ function metricBar(label, pct, segments) {
   return `${cyan(bold(label))} ${usageColor(pct, '█'.repeat(filled))}${mutedGray('░'.repeat(empty))} ${bold(usageColor(pct, Math.round(pct) + '%'))}`;
 }
 
+// Cache hit-rate bar: inverted color ramp because a HIGH hit rate is healthy.
+// Coloring by (100 - pct) reuses usageColor so 90% reads green, 10% reads red.
+function cacheBar(label, pct, segments) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const filled  = Math.round((clamped / 100) * segments);
+  const empty   = segments - filled;
+  const inv      = 100 - clamped;
+  return `${cyan(bold(label))} ${usageColor(inv, '█'.repeat(filled))}${mutedGray('░'.repeat(empty))} ${bold(usageColor(inv, Math.round(clamped) + '%'))}`;
+}
+
+// Cache hit rate: read tokens / all input tokens for the turn. Codex CLI does
+// not yet emit cache token fields (statusline support itself is pending,
+// openai/codex#17827); the field names below mirror Claude Code's
+// context.current_usage so this lights up if/when Codex adopts the same shape.
+// Guarded throughout, so it stays inert until those fields appear.
+function cacheHitRate(currentUsage) {
+  if (!currentUsage) return null;
+  const fresh = currentUsage.input_tokens || 0;
+  const read  = currentUsage.cache_read_input_tokens || 0;
+  const write = currentUsage.cache_creation_input_tokens || 0;
+  const total = fresh + read + write;
+  if (total <= 0) return null;
+  return (read / total) * 100;
+}
+
 // ── Git status ─────────────────────────────────────────────────────────────────
 
 // execFileSync with argument arrays: no shell involved, fixed arguments only.
@@ -115,6 +140,13 @@ process.stdin.on('end', () => {
     if (ctx?.used_tokens != null) {
       const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(n);
       tokenPart = `${cyan(bold('TOK'))} ${white(fmt(ctx.used_tokens))} ${mutedGray('/')} ${white(fmt(ctx.window_tokens ?? 0))}`;
+    }
+
+    // ── Cache hit rate (current turn) ─────────────────────────────────────────
+    let cachePart = '';
+    const hitRate = cacheHitRate(ctx?.current_usage);
+    if (hitRate != null) {
+      cachePart = cacheBar('CACHE', hitRate, 6);
     }
 
     // ── Rate limits ──────────────────────────────────────────────────────────
@@ -175,7 +207,7 @@ process.stdin.on('end', () => {
     const leftParts  = [softBlue(model) + effort, white(dirname)].filter(Boolean).join(sep);
     const rightParts = [ctxPart, fiveHourPart, weeklyPart].filter(Boolean).join(dotSep);
     const line1      = rightParts ? leftParts + sep + rightParts : leftParts;
-    const line2Parts = [gitPart, tokenPart].filter(Boolean).join(dotSep);
+    const line2Parts = [gitPart, tokenPart, cachePart].filter(Boolean).join(dotSep);
     const output     = line2Parts ? line1 + '\n' + line2Parts : line1;
 
     process.stdout.write(output);
