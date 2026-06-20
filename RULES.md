@@ -29,6 +29,8 @@ These defaults do not guess project-specific details.
   official docs or local source. Do not guess from memory.
 - Work token efficiently: read only the file sections you need, do not re-read
   unchanged files, and filter or truncate large command output at the source.
+- For multi-step tasks, track progress against the original request and confirm
+  every part is done before reporting completion. Do not silently drop steps.
 
 ## Subagents
 
