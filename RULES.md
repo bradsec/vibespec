@@ -110,7 +110,9 @@ These defaults do not guess project-specific details.
 
 ## Documentation
 
-- Update docs when behavior, setup, commands, configuration, or public APIs change.
+- When a change adds, removes, or alters user-facing behavior, commands, setup,
+  configuration, or public APIs, update the README and other affected docs as part
+  of the same change. The task is not done until docs match the new behavior.
 - Keep documentation concise and specific. Prefer links to canonical docs over
   copying long reference material.
 - Remove stale instructions when they no longer affect behavior.
@@ -124,6 +126,9 @@ These defaults do not guess project-specific details.
 - Check `git diff` and `git status` before committing or handing off.
 - Do not commit secrets, local machine paths, build artifacts, or unrelated
   generated files.
+- Keep `.gitignore` current. Before committing, scan `git status` for untracked AI
+  planning notes, scratch docs, session logs, or build output, and add patterns to
+  `.gitignore` instead of committing them.
 
 ## Communication
 
