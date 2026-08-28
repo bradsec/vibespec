@@ -35,7 +35,7 @@ test_codex_install_creates_tui_status_line() {
 
     local config="$home/.codex/config.toml"
     assert_contains "$config" "[tui]"
-    assert_contains "$config" 'status_line = ["model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "git-branch", "current-dir"]'
+    assert_contains "$config" 'status_line = ["model-with-reasoning", "context-used", "used-tokens", "task-progress", "five-hour-limit", "weekly-limit", "git-branch", "current-dir"]'
     test -x "$home/.codex/statusline.js"
 }
 
@@ -60,7 +60,7 @@ EOF
     assert_contains "$config" 'status_line = ["do-not-touch"]'
     assert_contains "$config" 'status_line = ["also-keep"]'
     assert_contains "$config" 'theme = "ansi"'
-    assert_contains "$config" 'status_line = ["model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "git-branch", "current-dir"]'
+    assert_contains "$config" 'status_line = ["model-with-reasoning", "context-used", "used-tokens", "task-progress", "five-hour-limit", "weekly-limit", "git-branch", "current-dir"]'
     assert_not_contains "$config" 'status_line = ["old"]'
 }
 

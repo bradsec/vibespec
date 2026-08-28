@@ -82,11 +82,13 @@ All statusline scripts live in `statuslines/`.
 
 | Tool | Current behavior |
 |------|------------------|
-| Claude Code | Installs a documented command-backed statusline showing context usage, rate limits, git status, token counts, and cache hit rate. |
+| Claude Code | Installs a documented command-backed statusline showing context usage, rate limits, git status, context-window token counts, session cost, model reasoning effort, and cache hit rate. |
 | Codex | Installs the local formatter script and configures supported built-in `tui.status_line` items in `~/.codex/config.toml`. Command-backed custom statuslines are not supported yet. |
-| Antigravity CLI | Installs a documented command-backed statusline showing context usage, agent state, git status, token counts, and cache hit rate. |
+| Antigravity CLI | Installs a documented command-backed statusline showing context usage, rate limits, git status, token counts, session cost, and cache hit rate. It assumes the Claude Code statusline JSON schema and degrades to whatever fields the host actually sends. |
 
-The `CACHE` segment shows the prompt-cache hit rate for the current turn: the share of input tokens served from cache rather than reprocessed. A high rate (green) means cheaper, faster turns; a low rate (red) means more of the context was reprocessed. It is hidden when the host does not report cache token fields.
+The `CACHE` segment shows the prompt-cache hit rate: the share of input tokens served from cache rather than reprocessed. It uses the session-wide `prompt_cache.hit_ratio` when the host reports it (Claude Code 2.1.251+), otherwise a per-turn estimate from the last response's token counts. A high rate (green) means cheaper, faster turns; a low rate (red) means more of the context was reprocessed. It is hidden when the host reports no cache fields.
+
+The `TOK` segment counts tokens currently in the context window (from the most recent API response), not the session total, and shows them against the window size when the host reports it. `$` is the estimated session cost in USD from the host, shown only when greater than zero.
 
 The statusline menu also includes reset actions to restore each tool's original statusline behavior. Resets remove only the statusline-related setting for the selected tool and leave unrelated config keys intact.
 
@@ -98,6 +100,7 @@ Run the test suite:
 bash tests/config-rules.sh
 bash tests/install-state.sh
 bash tests/statusline-installers.sh
+bash tests/statusline-scripts.sh
 ```
 
 Lint the shell scripts:

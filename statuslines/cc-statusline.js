@@ -66,11 +66,11 @@ function cacheBar(label, pct, segments) {
   return `${cyan(bold(label))} ${filledBar}${emptyBar} ${pctStr}`;
 }
 
-// Cache hit rate for the current turn: fraction of input tokens served from the
-// prompt cache. Denominator is all input tokens (fresh + cache read + cache
-// write). current_usage is per-turn, so this reflects the last turn, not the
-// cumulative session. Returns null when the fields are absent or no input yet.
-function cacheHitRate(currentUsage) {
+// Per-turn cache hit rate: fraction of input tokens served from the prompt
+// cache for the last API call. Denominator is all input tokens (fresh + cache
+// read + cache write). This is a fallback; it reflects one turn, not the
+// session. Returns null when the fields are absent or no input yet.
+function turnCacheHitRate(currentUsage) {
   if (!currentUsage) return null;
   const fresh = currentUsage.input_tokens || 0;
   const read  = currentUsage.cache_read_input_tokens || 0;
@@ -80,11 +80,23 @@ function cacheHitRate(currentUsage) {
   return (read / total) * 100;
 }
 
+// Session cache hit rate. Claude Code v2.1.251+ sends a `prompt_cache` object
+// whose `hit_ratio` (0..1) is cache-read tokens over all input tokens for the
+// whole main conversation. Prefer it; fall back to the per-turn estimate on
+// older clients or before the first response.
+function cacheHitRate(data) {
+  const ratio = data.prompt_cache?.hit_ratio;
+  if (typeof ratio === 'number') return ratio * 100;
+  return turnCacheHitRate(data.context_window?.current_usage);
+}
+
 // ── Git status ────────────────────────────────────────────────────────────────
 // Returns null when cwd is not inside a git repo (or git is not available).
 // execFileSync with argument arrays: no shell involved, fixed arguments only.
 // --no-optional-locks is a global git flag, so it goes before the subcommand.
-function getGitInfo(cwd) {
+// Pass { skipRemote: true } to skip the remote-URL lookup when the caller
+// already has repo identity from the statusline payload.
+function getGitInfo(cwd, { skipRemote = false } = {}) {
   const opts = { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] };
 
   const run = args => {
@@ -113,19 +125,21 @@ function getGitInfo(cwd) {
 
   // Remote URL for origin (or first remote if origin absent)
   let remote = null;
-  const remoteUrl = run(['remote', 'get-url', 'origin']) ||
-                    (() => {
-                      const remotes = run(['remote']);
-                      if (!remotes) return null;
-                      const first = remotes.split('\n').find(Boolean);
-                      return first ? run(['remote', 'get-url', first]) : null;
-                    })();
-  if (remoteUrl) {
-    // Strip trailing .git and protocol prefix for brevity
-    remote = remoteUrl
-      .replace(/\.git$/, '')
-      .replace(/^https?:\/\//, '')
-      .replace(/^git@([^:]+):/, '$1/');
+  if (!skipRemote) {
+    const remoteUrl = run(['remote', 'get-url', 'origin']) ||
+                      (() => {
+                        const remotes = run(['remote']);
+                        if (!remotes) return null;
+                        const first = remotes.split('\n').find(Boolean);
+                        return first ? run(['remote', 'get-url', first]) : null;
+                      })();
+    if (remoteUrl) {
+      // Strip trailing .git and protocol prefix for brevity
+      remote = remoteUrl
+        .replace(/\.git$/, '')
+        .replace(/^https?:\/\//, '')
+        .replace(/^git@([^:]+):/, '$1/');
+    }
   }
 
   return { branch, dirtyCount, unpushed, behind, remote };
@@ -166,8 +180,11 @@ function getAccountInfo() {
 }
 
 // ── Context window normalization ──────────────────────────────────────────────
-// Claude Code reserves ~16.5% for autocompact buffer; normalize to show 100%
-// when that buffer is reached (consistent with the existing GSD statusline).
+// Fallback only. Newer Claude Code sends a pre-calculated
+// context_window.used_percentage; use that when present. This path runs on
+// older clients that send only remaining_percentage: Claude Code reserves
+// ~16.5% for the autocompact buffer, so normalize to show 100% when that
+// buffer is reached.
 const AUTO_COMPACT_BUFFER_PCT = 16.5;
 
 function normalizeContextUsed(remaining_pct) {
@@ -190,36 +207,58 @@ process.stdin.on('end', () => {
     const data = JSON.parse(input);
 
     const model    = data.model?.display_name || 'Claude';
+    const effort   = data.effort?.level ? mutedGray(` [${data.effort.level}]`) : '';
     const dir      = data.workspace?.current_dir || process.cwd();
     const session  = data.session_id || '';
     const dirname  = path.basename(dir);
+    const cw       = data.context_window || {};
 
     const homeDir   = os.homedir();
     const claudeDir = process.env.CLAUDE_CONFIG_DIR || path.join(homeDir, '.claude');
 
+    function fmtTokens(n) {
+      if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+      if (n >= 1_000)     return (n / 1_000).toFixed(1)     + 'k';
+      return String(n);
+    }
+
     // ── Context bar ────────────────────────────────────────────────────────
+    // Prefer the pre-calculated used_percentage; fall back to normalizing
+    // remaining_percentage on older clients that do not send it.
     let ctxPart = '';
-    const remaining = data.context_window?.remaining_percentage;
-    if (remaining != null) {
-      ctxPart = metricBar('CTX', normalizeContextUsed(remaining), 8);
+    if (cw.used_percentage != null) {
+      ctxPart = metricBar('CTX', Math.round(cw.used_percentage), 8);
+    } else if (cw.remaining_percentage != null) {
+      ctxPart = metricBar('CTX', normalizeContextUsed(cw.remaining_percentage), 8);
     }
 
-    // ── Token counts (session cumulative) ────────────────────────────────────
+    // ── Context occupancy tokens ────────────────────────────────────────────
+    // context_window.total_* are the tokens currently in the window (from the
+    // most recent API response), not session cumulative. Pair with the window
+    // size so the ratio is meaningful.
     let tokenPart = '';
-    const totalIn  = data.context_window?.total_input_tokens;
-    const totalOut = data.context_window?.total_output_tokens;
-    if (totalIn != null && totalOut != null) {
-      function fmtTokens(n) {
-        if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-        if (n >= 1_000)     return (n / 1_000).toFixed(1)     + 'k';
-        return String(n);
+    const totalIn  = cw.total_input_tokens;
+    const totalOut = cw.total_output_tokens;
+    const winSize  = cw.context_window_size;
+    if (totalIn != null) {
+      tokenPart = `${cyan(bold('TOK'))} ${cyan(bold('IN'))} ${white(fmtTokens(totalIn))}`;
+      if (winSize) tokenPart += ` ${mutedGray('/')} ${white(fmtTokens(winSize))}`;
+      if (totalOut != null) {
+        tokenPart += ` ${mutedGray('·')} ${cyan(bold('OUT'))} ${white(fmtTokens(totalOut))}`;
       }
-      tokenPart = `${cyan(bold('TOK'))} ${cyan(bold('IN'))} ${white(fmtTokens(totalIn))} ${mutedGray('·')} ${cyan(bold('OUT'))} ${white(fmtTokens(totalOut))}`;
     }
 
-    // ── Cache hit rate (current turn) ─────────────────────────────────────────
+    // ── Cost (session) ─────────────────────────────────────────────────────
+    let costPart = '';
+    const costUsd = data.cost?.total_cost_usd;
+    if (typeof costUsd === 'number' && costUsd > 0) {
+      costPart = `${cyan(bold('$'))} ${white(costUsd.toFixed(2))}`;
+    }
+
+    // ── Cache hit rate ─────────────────────────────────────────────────────
+    // Session-wide when prompt_cache is present, else the per-turn estimate.
     let cachePart = '';
-    const hitRate = cacheHitRate(data.context_window?.current_usage);
+    const hitRate = cacheHitRate(data);
     if (hitRate != null) {
       cachePart = cacheBar('CACHE', hitRate, 6);
     }
@@ -276,9 +315,18 @@ process.stdin.on('end', () => {
     }
 
     // ── Git info ───────────────────────────────────────────────────────────
+    // repo identity comes from the payload when available, so skip the extra
+    // `git remote` calls in that case.
     let gitPart = '';
     const gitCwd = data.cwd || dir;
-    const git    = getGitInfo(gitCwd);
+    const repo   = data.workspace?.repo;
+    const git    = getGitInfo(gitCwd, { skipRemote: !!repo });
+    let remoteLabel = null;
+    if (repo && (repo.owner || repo.name)) {
+      remoteLabel = [repo.host, repo.owner, repo.name].filter(Boolean).join('/');
+    } else if (git?.remote) {
+      remoteLabel = git.remote;
+    }
     if (git) {
       // Branch: always shown
       gitPart = `${cyan(bold('GIT'))} ${white(git.branch)}`;
@@ -300,8 +348,8 @@ process.stdin.on('end', () => {
     }
 
     // ── Assemble output ────────────────────────────────────────────────────
-    // Line 1: Name · Plan │ ModelName │ active task │ CTX ████░░░░ nn% · 5H ████░░ nn% ↺HH:MM · 7D ████░░ nn%
-    // Line 2: dirname · remote · GIT branch · ~n · ↑n · ↓n · TOK IN nn.nk · OUT nn.nk · CACHE ████░░ nn%
+    // Line 1: Name · Plan │ ModelName [effort] │ active task │ CTX ████░░░░ nn% · 5H ████░░ nn% ↺HH:MM · 7D ████░░ nn%
+    // Line 2: dirname · remote · GIT branch · ~n · ↑n · ↓n · TOK IN nn.nk / nnnk · OUT nn.nk · $ n.nn · CACHE ████░░ nn%
     //
     // Visual hierarchy:
     //   - Model: soft blue (ambient context)
@@ -326,7 +374,7 @@ process.stdin.on('end', () => {
 
     const leftParts = [
       acctPart,
-      softBlue(model),
+      softBlue(model) + effort,
       task ? bold(yellow(task)) : null,
     ].filter(Boolean).join(sep);
 
@@ -338,13 +386,13 @@ process.stdin.on('end', () => {
       ? leftParts + sep + rightParts
       : leftParts;
 
-    // Line 2: dir (+ remote) · git · tokens
+    // Line 2: dir (+ remote) · git · tokens · cost · cache
     let dirPart = white(dirname);
-    if (git?.remote) {
-      dirPart += dotSep + mutedGray(git.remote);
+    if (remoteLabel) {
+      dirPart += dotSep + mutedGray(remoteLabel);
     }
 
-    const line2Parts = [dirPart, gitPart, tokenPart, cachePart].filter(Boolean).join(dotSep);
+    const line2Parts = [dirPart, gitPart, tokenPart, costPart, cachePart].filter(Boolean).join(dotSep);
     const output     = line2Parts
       ? line1 + '\n' + line2Parts
       : line1;

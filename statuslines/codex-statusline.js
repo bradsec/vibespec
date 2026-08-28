@@ -1,12 +1,20 @@
 #!/usr/bin/env node
 // Codex CLI Statusline
 //
-// NOTE: Command-based statusline is not yet implemented in Codex CLI.
-// Track: https://github.com/openai/codex/issues/17827
+// NOTE: Command-based / custom statusline rendering is not implemented in
+// Codex CLI as of this writing. Open feature requests:
+//   https://github.com/openai/codex/issues/17827
+//   https://github.com/openai/codex/issues/16921
+//   https://github.com/openai/codex/issues/20140
+//   https://github.com/openai/codex/issues/20244
+//   https://github.com/openai/codex/issues/20043
 //
-// This script is ready for when support lands. The proposed stdin JSON:
+// This script is a placeholder for when support lands. Codex has not published
+// a stdin schema, so the shape below is a guess and MUST NOT be relied on. The
+// field names mirror Claude Code's statusline payload where plausible so this
+// file needs minimal changes if Codex adopts a similar contract:
 //   {
-//     "model": "gpt-5.5",
+//     "model": "gpt-5.6",
 //     "reasoning_effort": "high",
 //     "cwd": "/repo",
 //     "git_branch": "main",
@@ -14,8 +22,10 @@
 //       "remaining_percent": 82.4,
 //       "used_percent": 17.6,
 //       "used_tokens": 176000,
-//       "window_tokens": 1000000
+//       "window_tokens": 1000000,
+//       "current_usage": { "input_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0 }
 //     },
+//     "prompt_cache": { "hit_ratio": 0.9 },
 //     "limits": {
 //       "five_hour": { "used_percent": 16.0, "resets_at": 1770000000 },
 //       "weekly":    { "used_percent": 12.0, "resets_at": 1770300000 }
@@ -77,12 +87,12 @@ function cacheBar(label, pct, segments) {
   return `${cyan(bold(label))} ${usageColor(inv, '█'.repeat(filled))}${mutedGray('░'.repeat(empty))} ${bold(usageColor(inv, Math.round(clamped) + '%'))}`;
 }
 
-// Cache hit rate: read tokens / all input tokens for the turn. Codex CLI does
-// not yet emit cache token fields (statusline support itself is pending,
-// openai/codex#17827); the field names below mirror Claude Code's
-// context.current_usage so this lights up if/when Codex adopts the same shape.
+// Cache hit rate. Codex CLI does not yet emit cache fields (statusline support
+// itself is pending); the field names below mirror Claude Code's payload so
+// this lights up if/when Codex adopts a similar shape. Prefer a session-wide
+// prompt_cache.hit_ratio, fall back to a per-turn estimate from current_usage.
 // Guarded throughout, so it stays inert until those fields appear.
-function cacheHitRate(currentUsage) {
+function turnCacheHitRate(currentUsage) {
   if (!currentUsage) return null;
   const fresh = currentUsage.input_tokens || 0;
   const read  = currentUsage.cache_read_input_tokens || 0;
@@ -90,6 +100,12 @@ function cacheHitRate(currentUsage) {
   const total = fresh + read + write;
   if (total <= 0) return null;
   return (read / total) * 100;
+}
+
+function cacheHitRate(data) {
+  const ratio = data.prompt_cache?.hit_ratio;
+  if (typeof ratio === 'number') return ratio * 100;
+  return turnCacheHitRate(data.context?.current_usage);
 }
 
 // ── Git status ─────────────────────────────────────────────────────────────────
@@ -142,9 +158,9 @@ process.stdin.on('end', () => {
       tokenPart = `${cyan(bold('TOK'))} ${white(fmt(ctx.used_tokens))} ${mutedGray('/')} ${white(fmt(ctx.window_tokens ?? 0))}`;
     }
 
-    // ── Cache hit rate (current turn) ─────────────────────────────────────────
+    // ── Cache hit rate ─────────────────────────────────────────────────────
     let cachePart = '';
-    const hitRate = cacheHitRate(ctx?.current_usage);
+    const hitRate = cacheHitRate(data);
     if (hitRate != null) {
       cachePart = cacheBar('CACHE', hitRate, 6);
     }

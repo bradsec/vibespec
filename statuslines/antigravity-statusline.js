@@ -3,10 +3,14 @@
 // Config: ~/.gemini/antigravity-cli/settings.json
 //   "statusLine": { "type": "command", "command": "node ~/.gemini/antigravity-cli/statusline.js" }
 //
-// Stdin JSON fields (same schema as Claude Code):
-//   model.display_name, workspace.current_dir, session_id,
-//   context_window.{remaining_percentage, total_input_tokens, total_output_tokens},
-//   rate_limits.{five_hour, seven_day}
+// Stdin JSON is assumed to match the Claude Code statusline schema. This is
+// not verified against a published Antigravity CLI contract, so every field
+// access is optional-chained and the script degrades to whatever is present:
+//   model.display_name, effort.level, workspace.current_dir, session_id,
+//   context_window.{used_percentage, remaining_percentage, context_window_size,
+//     total_input_tokens, total_output_tokens, current_usage},
+//   prompt_cache.hit_ratio, cost.total_cost_usd,
+//   rate_limits.{five_hour, seven_day}, credits.used_percentage (speculative)
 
 const { execFileSync } = require('child_process');
 const path = require('path');
@@ -51,9 +55,9 @@ function cacheBar(label, pct, segments) {
   return `${cyan(bold(label))} ${usageColor(inv, '█'.repeat(filled))}${mutedGray('░'.repeat(empty))} ${bold(usageColor(inv, Math.round(clamped) + '%'))}`;
 }
 
-// Cache hit rate for the current turn: read tokens / all input tokens. Per-turn
-// (current_usage), not cumulative. Returns null when fields are absent.
-function cacheHitRate(currentUsage) {
+// Per-turn cache hit rate: read tokens / all input tokens for the last API
+// call. Fallback only. Returns null when fields are absent.
+function turnCacheHitRate(currentUsage) {
   if (!currentUsage) return null;
   const fresh = currentUsage.input_tokens || 0;
   const read  = currentUsage.cache_read_input_tokens || 0;
@@ -61,6 +65,14 @@ function cacheHitRate(currentUsage) {
   const total = fresh + read + write;
   if (total <= 0) return null;
   return (read / total) * 100;
+}
+
+// Session cache hit rate: prefer prompt_cache.hit_ratio (0..1) when the host
+// sends it, mirroring Claude Code; fall back to the per-turn estimate.
+function cacheHitRate(data) {
+  const ratio = data.prompt_cache?.hit_ratio;
+  if (typeof ratio === 'number') return ratio * 100;
+  return turnCacheHitRate(data.context_window?.current_usage);
 }
 
 // ── Git status ─────────────────────────────────────────────────────────────────
@@ -84,7 +96,8 @@ function getGitInfo(cwd) {
 }
 
 // ── Context normalization ──────────────────────────────────────────────────────
-// Mirror Claude Code's 16.5% autocompact buffer normalization
+// Fallback only. Prefer context_window.used_percentage when the host sends it.
+// Otherwise mirror Claude Code's 16.5% autocompact buffer normalization.
 
 const AUTO_COMPACT_BUFFER_PCT = 16.5;
 
@@ -109,29 +122,46 @@ process.stdin.on('end', () => {
 
     const modelRaw = data.model;
     const model    = (typeof modelRaw === 'object' ? modelRaw?.display_name : modelRaw) || 'Antigravity';
+    const effort   = data.effort?.level ? mutedGray(` [${data.effort.level}]`) : '';
     const dir      = data.workspace?.current_dir || data.cwd || process.cwd();
     const dirname  = path.basename(dir);
+    const cw       = data.context_window || {};
+
+    const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(n);
 
     // ── Context bar ─────────────────────────────────────────────────────────
+    // Prefer the pre-calculated used_percentage; normalize remaining only as a
+    // fallback for hosts that do not send it.
     let ctxPart = '';
-    const remaining = data.context_window?.remaining_percentage;
-    if (remaining != null) {
-      const used = normalizeCtx(remaining);
-      ctxPart = metricBar('CTX', used, 8);
+    if (cw.used_percentage != null) {
+      ctxPart = metricBar('CTX', Math.round(cw.used_percentage), 8);
+    } else if (cw.remaining_percentage != null) {
+      ctxPart = metricBar('CTX', normalizeCtx(cw.remaining_percentage), 8);
     }
 
-    // ── Token counts ────────────────────────────────────────────────────────
+    // ── Context occupancy tokens ───────────────────────────────────────────
     let tokenPart = '';
-    const totalIn  = data.context_window?.total_input_tokens;
-    const totalOut = data.context_window?.total_output_tokens;
-    if (totalIn != null && totalOut != null) {
-      const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(n);
-      tokenPart = `${cyan(bold('TOK'))} ${cyan(bold('IN'))} ${white(fmt(totalIn))} ${mutedGray('·')} ${cyan(bold('OUT'))} ${white(fmt(totalOut))}`;
+    const totalIn  = cw.total_input_tokens;
+    const totalOut = cw.total_output_tokens;
+    const winSize  = cw.context_window_size;
+    if (totalIn != null) {
+      tokenPart = `${cyan(bold('TOK'))} ${cyan(bold('IN'))} ${white(fmt(totalIn))}`;
+      if (winSize) tokenPart += ` ${mutedGray('/')} ${white(fmt(winSize))}`;
+      if (totalOut != null) {
+        tokenPart += ` ${mutedGray('·')} ${cyan(bold('OUT'))} ${white(fmt(totalOut))}`;
+      }
     }
 
-    // ── Cache hit rate (current turn) ─────────────────────────────────────────
+    // ── Cost (session) ────────────────────────────────────────────────────
+    let costPart = '';
+    const costUsd = data.cost?.total_cost_usd;
+    if (typeof costUsd === 'number' && costUsd > 0) {
+      costPart = `${cyan(bold('$'))} ${white(costUsd.toFixed(2))}`;
+    }
+
+    // ── Cache hit rate ────────────────────────────────────────────────────
     let cachePart = '';
-    const hitRate = cacheHitRate(data.context_window?.current_usage);
+    const hitRate = cacheHitRate(data);
     if (hitRate != null) {
       cachePart = cacheBar('CACHE', hitRate, 6);
     }
@@ -195,13 +225,13 @@ process.stdin.on('end', () => {
     const sep    = mutedGray(' │ ');
     const dotSep = mutedGray(' · ');
 
-    const leftParts = [softBlue(model), white(dirname)].filter(Boolean).join(sep);
+    const leftParts = [softBlue(model) + effort, white(dirname)].filter(Boolean).join(sep);
     const rightParts = [ctxPart, fiveHourPart, sevenDayPart, creditsPart]
       .filter(Boolean)
       .join(dotSep);
 
     const line1 = rightParts ? leftParts + sep + rightParts : leftParts;
-    const line2Parts = [gitPart, tokenPart, cachePart].filter(Boolean).join(dotSep);
+    const line2Parts = [gitPart, tokenPart, costPart, cachePart].filter(Boolean).join(dotSep);
     const output = line2Parts ? line1 + '\n' + line2Parts : line1;
 
     process.stdout.write(output);

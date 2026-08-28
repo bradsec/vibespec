@@ -32,7 +32,7 @@ echo "Installed: $HOOK_DEST"
 if ! command -v python3 &>/dev/null; then
     echo "Error: python3 is required to update $CONFIG safely." >&2
     echo "Install python3, or add this manually under [tui] in $CONFIG:" >&2
-    echo '  status_line = ["model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "git-branch", "current-dir"]' >&2
+    echo '  status_line = ["model-with-reasoning", "context-used", "used-tokens", "task-progress", "five-hour-limit", "weekly-limit", "git-branch", "current-dir"]' >&2
     exit 1
 fi
 
@@ -44,7 +44,7 @@ python3 - "$CONFIG" <<'PYEOF'
 import sys
 
 config_path = sys.argv[1]
-status_line = 'status_line = ["model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "git-branch", "current-dir"]'
+status_line = 'status_line = ["model-with-reasoning", "context-used", "used-tokens", "task-progress", "five-hour-limit", "weekly-limit", "git-branch", "current-dir"]'
 
 with open(config_path, 'r', encoding='utf-8') as f:
     content = f.read()
@@ -91,7 +91,7 @@ PYEOF
 echo "Updated: $CONFIG"
 echo ""
 echo "  [tui]"
-echo "  status_line = [\"model-with-reasoning\", \"context-used\", \"five-hour-limit\", \"weekly-limit\", \"git-branch\", \"current-dir\"]"
+echo "  status_line = [\"model-with-reasoning\", \"context-used\", \"used-tokens\", \"task-progress\", \"five-hour-limit\", \"weekly-limit\", \"git-branch\", \"current-dir\"]"
 echo ""
 echo "Use /statusline inside Codex to toggle and reorder items."
 echo "Restart Codex CLI to apply config changes."
