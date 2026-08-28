@@ -24,13 +24,13 @@ last30statuslines.md
 *.tmp
 *.log
 
+# Node lockfiles (this repo ships no dependencies)
+package-lock.json
+skills-lock.json
+
 # OS and editor files
 .DS_Store
 Thumbs.db
-package-lock.json
-skills-lock.json
-package-lock.json
-package.json
 *.swp
 *.swo
 .idea/
