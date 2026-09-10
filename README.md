@@ -36,7 +36,7 @@ The menu uses local scripts when the repo is cloned. When run directly from GitH
 
 `RULES.md` is the source-of-truth instruction file deployed to all AI coding tools. It is written to be model-agnostic and deliberately lean: short, concrete directives that steer for the best results without burning the limited instruction budget that every model and project shares. It covers: working style, subagents, implementation, testing and verification, security and safety, dependencies and tooling, documentation, Git, and communication.
 
-The communication guidance also draws on [Humanizer](https://github.com/blader/humanizer), adapted for technical work and preserving factual accuracy.
+The communication guidance draws on [Humanizer](https://github.com/blader/humanizer), adapted for technical work and preserving factual accuracy. Implementation guidance also draws on [Ponytail](https://github.com/DietrichGebert/ponytail): understand affected callers, reuse platform capabilities, and simplify without sacrificing correctness or accessibility.
 
 Each tool receives a copy with its first line set to `# <filename>` (e.g. `# CLAUDE.md`, `# AGENTS.md`).
 

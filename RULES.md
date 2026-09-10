@@ -19,8 +19,9 @@ These defaults do not guess project-specific details.
 - Deliver what was asked, and no more. Do not add unrequested abstractions,
   options, or scaffolding for hypothetical future needs. Surface related problems
   or improvements as suggestions instead of bundling them in.
-- Fix root causes, not symptoms. Diagnose why something fails before changing
-  code; do not mask failures with retries, waits, or special-casing.
+- Fix root causes, not symptoms. Trace the affected flow and callers before
+  changing shared code, and check whether sibling paths have the same bug.
+  Do not mask failures with retries, waits, or special-casing.
 - If repeated attempts to fix something fail, stop and report what was tried and
   ruled out rather than continuing to guess.
 - Do not overwrite user changes. In a dirty worktree, preserve unrelated edits.
@@ -52,8 +53,11 @@ These defaults do not guess project-specific details.
   and color from the brief and product context. Avoid generic template defaults.
 - Prefer simple, explicit logic over clever abstractions. Add an abstraction only
   when it removes real duplication or clarifies a stable boundary.
-- Use the standard library and existing project dependencies before adding new
-  packages.
+- Look for existing code, standard-library support, native platform features,
+  and installed dependencies before writing a custom implementation or adding a
+  package. Choose the simplest option that meets the actual requirements.
+- Simplify for readability and maintenance, not line count. Preserve required
+  behavior, boundary validation, data-loss protection, security, and accessibility.
 - Comment only what the code cannot express: invariants, constraints, and the
   reason behind non-obvious choices. Do not narrate edits or restate the code.
 - Preserve public APIs, config formats, file paths, and user-facing behavior
