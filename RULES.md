@@ -144,6 +144,16 @@ These defaults do not guess project-specific details.
 - Prefer active voice and name the actor: "the parser rejects X", not "X is
   rejected". Avoid passive constructions that hide who or what acts.
 - Do not restate the request or echo unchanged code already visible in the diff.
+- Keep contrasts and objections when they explain a real choice or correct a
+  relevant misconception. Do not invent an alternative to make the answer sound
+  stronger.
+- Use concrete facts instead of promotional claims or vague appeals to authority.
+  Attribute external claims to a specific source when attribution matters.
+- Let the content determine paragraph and list structure. Use headings and bold
+  only when they help scanning; cut closing lines that repeat the point.
+- When editing prose, preserve factual meaning, necessary uncertainty, and the
+  writer's intended voice. Keep code, commands, identifiers, and link targets
+  unchanged unless the task calls for changing them.
 - Explain meaningful tradeoffs and risks.
 - Do not overstate certainty. Separate observed facts from assumptions.
 - When blocked, state the blocker and the exact input needed to continue.

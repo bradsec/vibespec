@@ -36,6 +36,8 @@ The menu uses local scripts when the repo is cloned. When run directly from GitH
 
 `RULES.md` is the source-of-truth instruction file deployed to all AI coding tools. It is written to be model-agnostic and deliberately lean: short, concrete directives that steer for the best results without burning the limited instruction budget that every model and project shares. It covers: working style, subagents, implementation, testing and verification, security and safety, dependencies and tooling, documentation, Git, and communication.
 
+The communication guidance also draws on [Humanizer](https://github.com/blader/humanizer), adapted for technical work and preserving factual accuracy.
+
 Each tool receives a copy with its first line set to `# <filename>` (e.g. `# CLAUDE.md`, `# AGENTS.md`).
 
 Rule installation fetches the current `RULES.md` from GitHub when possible, then falls back to the local file. Existing config files are compared before replacement. When a change is needed, the old file is backed up with a dated `.bak` suffix and the script prints both SHA256 hashes. Repeated replacements on the same day use numbered suffixes such as `.bak.1` to preserve earlier backups. Installation rejects content without the `# RULES.md` header and a nonempty body before changing existing rules.
