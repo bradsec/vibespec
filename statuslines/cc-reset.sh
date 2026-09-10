@@ -19,10 +19,10 @@ from pathlib import Path
 settings_path = Path(os.environ["SETTINGS"])
 try:
     cfg = json.loads(settings_path.read_text(encoding="utf-8"))
-except json.JSONDecodeError:
-    cfg = {}
+except json.JSONDecodeError as exc:
+    raise SystemExit(f"Error: refusing to overwrite invalid JSON in {settings_path}: {exc}")
 if not isinstance(cfg, dict):
-    cfg = {}
+    raise SystemExit(f"Error: expected a JSON object in {settings_path}; leaving it unchanged")
 
 cfg.pop("statusLine", None)
 settings_path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
@@ -32,8 +32,10 @@ elif command -v node &>/dev/null; then
         const fs = require('fs');
         const p = process.env.SETTINGS;
         let cfg = {};
-        try { cfg = JSON.parse(fs.readFileSync(p, 'utf8')); } catch(e) {}
-        if (typeof cfg !== 'object' || cfg === null) cfg = {};
+        cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+        if (typeof cfg !== 'object' || cfg === null || Array.isArray(cfg)) {
+            throw new Error('Expected a JSON object; leaving settings unchanged');
+        }
         delete cfg.statusLine;
         fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
     "

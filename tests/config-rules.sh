@@ -67,4 +67,50 @@ EOF
 
 test_codex_rules_update_reports_source_and_hashes
 
+test_codex_rules_preserve_same_day_backups() {
+    local test_home="$TMPDIR/codex-home"
+    local backup
+    backup="$test_home/.codex/AGENTS.md.$(date +%d%m%Y).bak"
+    printf '# AGENTS.md\nsecond rules\n' > "$test_home/.codex/AGENTS.md"
+    HOME="$test_home" PATH="$TMPDIR/bin:$PATH" bash -c '
+        source "'"$ROOT"'/src/config.sh"
+        install_config "Codex"
+    ' > "$TMPDIR/reinstall.out"
+    assert_contains "$backup" "old rules"
+    assert_contains "$backup.1" "second rules"
+    assert_contains "$test_home/.codex/AGENTS.md" "updated rules"
+}
+
+test_codex_rules_reject_invalid_downloads() {
+    local test_home="$TMPDIR/codex-home"
+    local payload="$TMPDIR/payload"
+    cat > "$TMPDIR/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -o) cp "$RULES_TEST_PAYLOAD" "$2"; exit ;;
+        *) shift ;;
+    esac
+done
+exit 1
+EOF
+    local invalid
+    for invalid in '' '# RULES.md' '<html>not rules</html>'; do
+        printf '%s\n' "$invalid" > "$payload"
+        if HOME="$test_home" PATH="$TMPDIR/bin:$PATH" RULES_TEST_PAYLOAD="$payload" bash -c '
+            source "'"$ROOT"'/src/config.sh"
+            install_config "Codex"
+        ' > "$TMPDIR/invalid.out" 2>&1; then
+            echo "Invalid rules download was accepted" >&2
+            exit 1
+        fi
+        assert_contains "$TMPDIR/invalid.out" "Invalid RULES.md"
+        assert_contains "$test_home/.codex/AGENTS.md" "updated rules"
+    done
+}
+
+test_codex_rules_preserve_same_day_backups
+test_codex_rules_reject_invalid_downloads
+
 echo "config rules tests passed"

@@ -26,10 +26,15 @@ echo "Installed: $HOOK_DEST"
 # Embed the absolute node path so the statusline works under the non-login
 # shell Antigravity CLI uses to run it, where an nvm-managed node is not on PATH.
 NODE_BIN="$(command -v node 2>/dev/null || true)"
+# Single quotes keep shell metacharacters in installation paths literal.
+shell_quote() {
+    local value="${1//\'/\'\\\'\'}"
+    printf "'%s'" "$value"
+}
 if [[ -n "$NODE_BIN" ]]; then
-    STATUSLINE_CMD="\"$NODE_BIN\" \"${HOOK_DEST}\""
+    STATUSLINE_CMD="$(shell_quote "$NODE_BIN") $(shell_quote "$HOOK_DEST")"
 else
-    STATUSLINE_CMD="node \"${HOOK_DEST}\""
+    STATUSLINE_CMD="node $(shell_quote "$HOOK_DEST")"
     echo ""
     echo "Warning: node not found on PATH."
     echo "The statusline runs via node. Install Node.js (e.g. via nvm) and make sure"
@@ -51,10 +56,10 @@ cfg = {}
 if settings_path.exists():
     try:
         cfg = json.loads(settings_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        cfg = {}
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Error: refusing to overwrite invalid JSON in {settings_path}: {exc}")
 if not isinstance(cfg, dict):
-    cfg = {}
+    raise SystemExit(f"Error: expected a JSON object in {settings_path}; leaving it unchanged")
 
 cfg["statusLine"] = {
     "type": "command",
@@ -70,8 +75,10 @@ elif [[ -n "$NODE_BIN" ]]; then
         const p = process.env.SETTINGS;
         const cmd = process.env.STATUSLINE_CMD;
         let cfg = {};
-        if (fs.existsSync(p)) { try { cfg = JSON.parse(fs.readFileSync(p, 'utf8')); } catch(e) {} }
-        if (typeof cfg !== 'object' || cfg === null) cfg = {};
+        if (fs.existsSync(p)) cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+        if (typeof cfg !== 'object' || cfg === null || Array.isArray(cfg)) {
+            throw new Error('Expected a JSON object; leaving settings unchanged');
+        }
         cfg.statusLine = { type: 'command', command: cmd };
         fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
     "

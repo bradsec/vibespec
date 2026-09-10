@@ -38,7 +38,7 @@ The menu uses local scripts when the repo is cloned. When run directly from GitH
 
 Each tool receives a copy with its first line set to `# <filename>` (e.g. `# CLAUDE.md`, `# AGENTS.md`).
 
-Rule installation fetches the current `RULES.md` from GitHub when possible, then falls back to the local file. Existing config files are compared before replacement. When a change is needed, the old file is backed up with a dated `.bak` suffix and the script prints both SHA256 hashes.
+Rule installation fetches the current `RULES.md` from GitHub when possible, then falls back to the local file. Existing config files are compared before replacement. When a change is needed, the old file is backed up with a dated `.bak` suffix and the script prints both SHA256 hashes. Repeated replacements on the same day use numbered suffixes such as `.bak.1` to preserve earlier backups. Installation rejects content without the `# RULES.md` header and a nonempty body before changing existing rules.
 
 Cross-tool config paths:
 
@@ -53,7 +53,7 @@ Cross-tool config paths:
 - Debian/Ubuntu Linux
 - `bash` 4+
 - `curl` or `wget`
-- `python3` for install-state tracking and some config file edits
+- `python3` for install-state tracking and some config file edits; Python 3.11+ for Codex statusline installation/reset and the installer tests
 - `node` for Node-based CLIs and command-backed statusline formatters
 
 The direct run command uses `curl` and Bash process substitution.
@@ -84,11 +84,15 @@ All statusline scripts live in `statuslines/`.
 |------|------------------|
 | Claude Code | Installs a documented command-backed statusline showing context usage, rate limits, git status, context-window token counts, session cost, model reasoning effort, and cache hit rate. |
 | Codex | Installs the local formatter script and configures supported built-in `tui.status_line` items in `~/.codex/config.toml`. Command-backed custom statuslines are not supported yet. |
-| Antigravity CLI | Installs a documented command-backed statusline showing context usage, rate limits, git status, token counts, session cost, and cache hit rate. It assumes the Claude Code statusline JSON schema and degrades to whatever fields the host actually sends. |
+| Antigravity CLI | Installs a command-backed formatter showing context usage, rate limits, git status, token counts, session cost, and cache hit rate. Its host integration is unverified: it assumes the Claude Code statusline JSON schema and degrades to whatever fields the host actually sends. |
 
-The `CACHE` segment shows the prompt-cache hit rate: the share of input tokens served from cache rather than reprocessed. It uses the session-wide `prompt_cache.hit_ratio` when the host reports it (Claude Code 2.1.251+), otherwise a per-turn estimate from the last response's token counts. A high rate (green) means cheaper, faster turns; a low rate (red) means more of the context was reprocessed. It is hidden when the host reports no cache fields.
+The `CACHE` segment shows the prompt-cache hit rate: the share of input tokens served from cache rather than reprocessed. It uses the session-wide `prompt_cache.hit_ratio` when the host reports it (Claude Code 2.1.251+), otherwise a per-turn estimate from the last response's token counts. A high rate (green) means cheaper, faster turns; a low rate (red) means more of the context was reprocessed. It is hidden when the host reports no cache fields or usable cache metrics. An explicit zero cache-read count still displays 0%.
 
 The `TOK` segment counts tokens currently in the context window (from the most recent API response), not the session total, and shows them against the window size when the host reports it. `$` is the estimated session cost in USD from the host, shown only when greater than zero.
+
+Context usage prefers the host's `used_percentage`, falling back to `100 - remaining_percentage` without assuming a compaction threshold. Invalid usage metrics are omitted. Git commands have a one-second timeout per invocation, and the Claude Code remote label omits URL credentials, query parameters, and fragments. Field meanings follow the [Claude Code statusline reference](https://code.claude.com/docs/en/statusline); Antigravity compatibility remains an assumption.
+
+Existing malformed or non-object JSON settings cause installation and reset to stop without replacing the file. Command paths are shell-quoted so spaces and shell metacharacters are treated literally. Codex edits preserve multiline values and unrelated settings, validate the result with Python 3.11+ `tomllib`, and stop without changing the config for invalid TOML or unsupported layouts such as inline `tui` tables and dotted `tui.status_line` assignments.
 
 The statusline menu also includes reset actions to restore each tool's original statusline behavior. Resets remove only the statusline-related setting for the selected tool and leave unrelated config keys intact.
 

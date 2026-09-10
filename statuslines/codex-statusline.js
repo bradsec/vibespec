@@ -72,7 +72,9 @@ function usageColor(pct, text) {
 }
 
 function metricBar(label, pct, segments) {
-  const filled = Math.round((Math.max(0, Math.min(100, pct)) / 100) * segments);
+  if (!Number.isFinite(pct)) return '';
+  pct = Math.max(0, Math.min(100, pct));
+  const filled = Math.round((pct / 100) * segments);
   const empty  = segments - filled;
   return `${cyan(bold(label))} ${usageColor(pct, '█'.repeat(filled))}${mutedGray('░'.repeat(empty))} ${bold(usageColor(pct, Math.round(pct) + '%'))}`;
 }
@@ -93,18 +95,19 @@ function cacheBar(label, pct, segments) {
 // prompt_cache.hit_ratio, fall back to a per-turn estimate from current_usage.
 // Guarded throughout, so it stays inert until those fields appear.
 function turnCacheHitRate(currentUsage) {
-  if (!currentUsage) return null;
-  const fresh = currentUsage.input_tokens || 0;
-  const read  = currentUsage.cache_read_input_tokens || 0;
-  const write = currentUsage.cache_creation_input_tokens || 0;
+  if (!currentUsage || currentUsage.cache_read_input_tokens == null) return null;
+  const fresh = currentUsage.input_tokens ?? 0;
+  const read  = currentUsage.cache_read_input_tokens ?? 0;
+  const write = currentUsage.cache_creation_input_tokens ?? 0;
+  if (![fresh, read, write].every(n => Number.isFinite(n) && n >= 0)) return null;
   const total = fresh + read + write;
-  if (total <= 0) return null;
+  if (!Number.isFinite(total) || total <= 0) return null;
   return (read / total) * 100;
 }
 
 function cacheHitRate(data) {
   const ratio = data.prompt_cache?.hit_ratio;
-  if (typeof ratio === 'number') return ratio * 100;
+  if (Number.isFinite(ratio) && ratio >= 0 && ratio <= 1) return ratio * 100;
   return turnCacheHitRate(data.context?.current_usage);
 }
 
@@ -113,7 +116,7 @@ function cacheHitRate(data) {
 // execFileSync with argument arrays: no shell involved, fixed arguments only.
 // --no-optional-locks is a global git flag, so it goes before the subcommand.
 function getGitInfo(cwd) {
-  const opts = { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] };
+  const opts = { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 1000 };
   const run = args => { try { return execFileSync('git', args, opts).trim(); } catch (_) { return null; } };
   if (run(['rev-parse', '--git-dir']) === null) return null;
   const branch = run(['symbolic-ref', '--short', 'HEAD']) || run(['rev-parse', '--short', 'HEAD']) || '?';
@@ -147,7 +150,7 @@ process.stdin.on('end', () => {
     // ── Context bar ─────────────────────────────────────────────────────────
     let ctxPart = '';
     const ctx = data.context;
-    if (ctx?.used_percent != null) {
+    if (Number.isFinite(ctx?.used_percent)) {
       ctxPart = metricBar('CTX', Math.round(ctx.used_percent), 8);
     }
 
@@ -172,10 +175,10 @@ process.stdin.on('end', () => {
     const fiveHour = data.limits?.five_hour;
     const weekly   = data.limits?.weekly;
 
-    if (fiveHour != null) {
+    if (Number.isFinite(fiveHour?.used_percent)) {
       const pct = Math.round(fiveHour.used_percent);
       let resetStr = '';
-      if (fiveHour.resets_at != null) {
+      if (Number.isFinite(fiveHour.resets_at) && Math.abs(fiveHour.resets_at) <= 8.64e12) {
         const d  = new Date(fiveHour.resets_at * 1000);
         const hh = String(d.getHours()).padStart(2, '0');
         const mm = String(d.getMinutes()).padStart(2, '0');
@@ -184,10 +187,10 @@ process.stdin.on('end', () => {
       fiveHourPart = metricBar('5H', pct, 6) + resetStr;
     }
 
-    if (weekly != null) {
+    if (Number.isFinite(weekly?.used_percent)) {
       const pct = Math.round(weekly.used_percent);
       let resetStr = '';
-      if (weekly.resets_at != null) {
+      if (Number.isFinite(weekly.resets_at) && Math.abs(weekly.resets_at) <= 8.64e12) {
         const d    = new Date(weekly.resets_at * 1000);
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         resetStr = mutedGray(` ↺ ${days[d.getDay()]} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`);

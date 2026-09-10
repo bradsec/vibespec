@@ -138,8 +138,13 @@ test_cc_install_writes_settings_without_node() {
     local home="$TMPDIR/cc-no-node"
     mkdir -p "$home"
 
-    # PATH excludes the nvm-managed node but keeps python3 and coreutils.
-    HOME="$home" PATH="/usr/bin:/bin" bash "$ROOT/statuslines/cc-install.sh" >/dev/null
+    local bin="$TMPDIR/no-node-bin"
+    mkdir -p "$bin"
+    local tool
+    for tool in bash dirname mkdir cp chmod python3; do
+        ln -sf "$(command -v "$tool")" "$bin/$tool"
+    done
+    HOME="$home" PATH="$bin" bash "$ROOT/statuslines/cc-install.sh" >/dev/null
 
     local settings="$home/.claude/settings.json"
     assert_contains "$settings" '"statusLine"'
@@ -179,6 +184,114 @@ EOF
     assert_contains "$settings" '"keepme": true'
     assert_not_contains "$settings" '"statusLine"'
 }
+
+test_json_settings_preserved_and_paths_quoted() {
+    ROOT="$ROOT" TEST_TMP="$TMPDIR" python3 - <<'PYTEST'
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+
+root = Path(os.environ["ROOT"])
+tmp = Path(os.environ["TEST_TMP"])
+for runtime in ("python3", "node"):
+    node = shutil.which("node")
+    if runtime == "node" and node is None:
+        raise SystemExit("Node.js is required to test the JSON fallback")
+    bindir = tmp / (runtime + "-bin")
+    bindir.mkdir()
+    for tool in ("bash", "dirname", "mkdir", "cp", "chmod", runtime):
+        (bindir / tool).symlink_to(shutil.which(tool))
+    for name, directory in (("cc", ".claude"), ("antigravity", ".gemini/antigravity-cli")):
+        home = tmp / (runtime + name + " space'$(false)`false`$HOME")
+        settings = home / directory / "settings.json"
+        settings.parent.mkdir(parents=True)
+        env = dict(os.environ, HOME=str(home), PATH=str(bindir))
+        for action in ("install", "reset"):
+            for invalid in ('{"keep": true,', '[{"keep": true}]', 'null', '42'):
+                settings.write_text(invalid)
+                result = subprocess.run([str(bindir / "bash"), str(root / "statuslines" / f"{name}-{action}.sh")], env=env, capture_output=True)
+                assert result.returncode != 0, (runtime, name, action, invalid)
+                assert settings.read_text() == invalid
+        settings.write_text('{"keep": true}')
+        subprocess.run([str(bindir / "bash"), str(root / "statuslines" / f"{name}-install.sh")], env=env, check=True, capture_output=True)
+        cfg = json.loads(settings.read_text())
+        assert cfg["keep"] is True
+        # Let a real POSIX shell parse the command and inspect the exact arguments.
+        command = cfg["statusLine"]["command"]
+        parsed = subprocess.run(["/bin/sh", "-c", "set -- " + command + '; printf "%s\\n" "$@"'], check=True, capture_output=True, text=True).stdout.splitlines()
+        destination = home / directory / ("hooks/cc-statusline.js" if name == "cc" else "statusline.js")
+        assert parsed == ([str(bindir / "node")] if runtime == "node" else ["node"]) + [str(destination)], parsed
+PYTEST
+}
+
+test_wrapper_propagates_installer_failure() (
+    source "$ROOT/src/statusline.sh"
+    local fixture="$TMPDIR/wrapper"
+    mkdir -p "$fixture/src" "$fixture/statuslines"
+    printf 'exit 23\n' > "$fixture/statuslines/cc-install.sh"
+    SCRIPT_DIR="$fixture/src"
+    record_install() { touch "$fixture/recorded"; }
+    local result=0
+    run_statusline_script cc-install.sh || result=$?
+    test "$result" -eq 23
+    test ! -e "$fixture/recorded"
+)
+
+test_codex_multiline_toml() {
+    ROOT="$ROOT" TEST_TMP="$TMPDIR" python3 - <<'PYTEST'
+import os
+from pathlib import Path
+import subprocess
+import tomllib
+
+root = Path(os.environ["ROOT"])
+home = Path(os.environ["TEST_TMP"]) / "codex-multiline"
+config = home / ".codex/config.toml"
+config.parent.mkdir(parents=True)
+original = '\n'.join([
+    'notes = """', '[tui]', 'status_line = ["inside-string"]', '"""',
+    '[ "tui" ] # footer', 'theme = "ansi"', 'status_line_extra = "keep"',
+    '"status_line" = [', '  "old", # comment with ]', '  "value]",', ']',
+    '[other] # other section', 'status_line = ["keep"]', '',
+])
+env = dict(os.environ, HOME=str(home))
+for action in ("install", "reset"):
+    config.write_text(original)
+    subprocess.run(["bash", str(root / "statuslines" / f"codex-{action}.sh")], env=env, check=True, capture_output=True)
+    updated = config.read_text()
+    result = tomllib.loads(updated)
+    before = tomllib.loads(original)
+    assert result["notes"] == before["notes"]
+    assert result["other"] == before["other"]
+    assert result["tui"]["theme"] == "ansi"
+    assert result["tui"]["status_line_extra"] == "keep"
+    assert '[other] # other section' in updated
+    if action == "install":
+        assert result["tui"]["status_line"][0] == "model-with-reasoning"
+        subprocess.run(["bash", str(root / "statuslines/codex-install.sh")], env=env, check=True, capture_output=True)
+        assert config.read_text() == updated
+    else:
+        assert "status_line" not in result["tui"]
+    for unsupported in (
+        '[tui]\nstatus_line = ["unterminated"\n',
+        'tui.status_line = ["old"]\n',
+        'tui = { status_line = ["old"], theme = "ansi" }\n',
+    ):
+        config.write_text(unsupported)
+        invalid = config.read_bytes()
+        result = subprocess.run(["bash", str(root / "statuslines" / f"codex-{action}.sh")], env=env, capture_output=True)
+        assert result.returncode != 0, (action, unsupported)
+        assert config.read_bytes() == invalid
+PYTEST
+}
+
+test_codex_multiline_toml
+
+test_wrapper_propagates_installer_failure
+
+test_json_settings_preserved_and_paths_quoted
 
 test_codex_install_creates_tui_status_line
 test_codex_install_preserves_other_status_line_keys

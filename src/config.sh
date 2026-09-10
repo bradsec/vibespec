@@ -63,6 +63,12 @@ install_config() {
             return 1
         fi
     fi
+    if [[ "$(head -n 1 "$tmp")" != '# RULES.md' ]] ||
+        ! tail -n +2 "$tmp" | grep '[^[:space:]]' > /dev/null; then
+        rm -f "$tmp"
+        print_message error "Invalid RULES.md: expected its header and a nonempty body."
+        return 1
+    fi
     print_message info "Rules source: ${rules_source}"
     local new_file
     new_file="$(mktemp)"
@@ -74,14 +80,19 @@ install_config() {
         print_message success "Rules already up to date: ${dest}"
         record_install "config:$(slugify "$tool")" "config" "RULES.md" "$dest"
         if [[ -n "${TOOL_RESTART[$tool]:-}" ]]; then
-        print_message info "${TOOL_RESTART[$tool]}"
-    fi
+            print_message info "${TOOL_RESTART[$tool]}"
+        fi
         return
     fi
 
     if [[ -f "$dest" ]]; then
         local backup_path
         backup_path="${dest}.$(date +%d%m%Y).bak"
+        local backup_base="$backup_path" backup_number=1
+        while [[ -e "$backup_path" || -L "$backup_path" ]]; do
+            backup_path="${backup_base}.${backup_number}"
+            backup_number=$((backup_number + 1))
+        done
         print_message info "Existing SHA256: $(sha256_file "$dest")"
         print_message info "New SHA256: $(sha256_file "$new_file")"
         cp "$dest" "$backup_path"

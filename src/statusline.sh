@@ -18,7 +18,7 @@ run_statusline_script() {
     repo_root="$(dirname "$SCRIPT_DIR")"
     local local_path="${repo_root}/statuslines/${script}"
     if [[ -f "$local_path" ]]; then
-        bash "$local_path"
+        bash "$local_path" || return $?
     else
         local tmpfile
         tmpfile=$(mktemp /tmp/vibespec-statusline-XXXXXX.sh)
@@ -27,8 +27,12 @@ run_statusline_script() {
             print_message error "Remote fetch failed for ${script} and no local copy found."
             return 1
         fi
-        bash "$tmpfile"
+        local result=0
+        bash "$tmpfile" || result=$?
         rm -f "$tmpfile"
+        if (( result != 0 )); then
+            return "$result"
+        fi
     fi
 
     case "$script" in

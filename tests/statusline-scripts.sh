@@ -12,6 +12,12 @@ if ! command -v node >/dev/null 2>&1; then
     exit 0
 fi
 
+TEST_TMP="$(mktemp -d)"
+trap 'rm -rf "$TEST_TMP"' EXIT
+export HOME="$TEST_TMP/home"
+export CLAUDE_CONFIG_DIR="$HOME/.claude"
+mkdir -p "$CLAUDE_CONFIG_DIR"
+
 fail() {
     echo "FAIL: $*" >&2
     exit 1
@@ -96,5 +102,37 @@ assert_has "$out" "80%"            "codex prompt_cache.hit_ratio"
 
 out="$(run codex-statusline.js '{"model":"gpt-5.6"}')"
 assert_has "$out" "gpt-5.6" "codex minimal payload"
+
+assert_lacks() {
+    local haystack="$1" needle="$2" label="$3"
+    case "$haystack" in
+        *"$needle"*) fail "$label: unexpected '$needle' in: $haystack" ;;
+    esac
+}
+
+for script in cc-statusline.js antigravity-statusline.js codex-statusline.js; do
+    out="$(run "$script" '{"context_window":{"current_usage":{"input_tokens":1000}},"context":{"current_usage":{"input_tokens":1000}}}')"
+    assert_lacks "$out" "CACHE" "$script absent cache telemetry"
+    out="$(run "$script" '{"context_window":{"used_percentage":"bad"},"context":{"used_percent":"bad"},"rate_limits":{"five_hour":{}},"limits":{"weekly":{}},"prompt_cache":{"hit_ratio":1e999}}')"
+    assert_lacks "$out" "NaN" "$script invalid metric"
+    assert_lacks "$out" "CACHE" "$script invalid cache ratio"
+    [[ -n "$out" ]] || fail "$script invalid metric hid the whole statusline"
+    out="$(run "$script" '{"context_window":{"current_usage":{"input_tokens":100,"cache_read_input_tokens":0}},"context":{"current_usage":{"input_tokens":100,"cache_read_input_tokens":0}}}')"
+    assert_has "$out" "CACHE" "$script explicit zero cache reads"
+    assert_has "$out" "0%" "$script zero cache rate"
+done
+
+for script in cc-statusline.js antigravity-statusline.js; do
+    out="$(run "$script" '{"cwd":"/tmp/proj","context_window":{"remaining_percentage":90}}')"
+    assert_has "$out" "10%" "$script remaining percentage complement"
+    assert_has "$out" "proj" "$script cwd fallback"
+done
+
+git init -q "$TEST_TMP/repo"
+git -C "$TEST_TMP/repo" remote add origin 'https://user:secret@example.com/acme/proj.git?token=private#fragment'
+out="$(run cc-statusline.js "{\"cwd\":\"$TEST_TMP/repo\"}")"
+assert_has "$out" "example.com/acme/proj" "cc remote identity"
+assert_lacks "$out" "secret" "cc remote password"
+assert_lacks "$out" "private" "cc remote query"
 
 echo "statusline script tests passed"

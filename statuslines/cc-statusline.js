@@ -44,7 +44,9 @@ function usageColor(pct, text) {
 // - Filled bar + percentage: usage-colored — state at a glance
 // - Empty bar: muted gray — low visual weight
 function metricBar(label, pct, segments) {
-  const filled = Math.round((Math.max(0, Math.min(100, pct)) / 100) * segments);
+  if (!Number.isFinite(pct)) return '';
+  pct = Math.max(0, Math.min(100, pct));
+  const filled = Math.round((pct / 100) * segments);
   const empty  = segments - filled;
   const filledBar = usageColor(pct, '█'.repeat(filled));
   const emptyBar  = mutedGray('░'.repeat(empty));
@@ -71,12 +73,13 @@ function cacheBar(label, pct, segments) {
 // read + cache write). This is a fallback; it reflects one turn, not the
 // session. Returns null when the fields are absent or no input yet.
 function turnCacheHitRate(currentUsage) {
-  if (!currentUsage) return null;
-  const fresh = currentUsage.input_tokens || 0;
-  const read  = currentUsage.cache_read_input_tokens || 0;
-  const write = currentUsage.cache_creation_input_tokens || 0;
+  if (!currentUsage || currentUsage.cache_read_input_tokens == null) return null;
+  const fresh = currentUsage.input_tokens ?? 0;
+  const read  = currentUsage.cache_read_input_tokens ?? 0;
+  const write = currentUsage.cache_creation_input_tokens ?? 0;
+  if (![fresh, read, write].every(n => Number.isFinite(n) && n >= 0)) return null;
   const total = fresh + read + write;
-  if (total <= 0) return null;
+  if (!Number.isFinite(total) || total <= 0) return null;
   return (read / total) * 100;
 }
 
@@ -86,7 +89,7 @@ function turnCacheHitRate(currentUsage) {
 // older clients or before the first response.
 function cacheHitRate(data) {
   const ratio = data.prompt_cache?.hit_ratio;
-  if (typeof ratio === 'number') return ratio * 100;
+  if (Number.isFinite(ratio) && ratio >= 0 && ratio <= 1) return ratio * 100;
   return turnCacheHitRate(data.context_window?.current_usage);
 }
 
@@ -97,7 +100,7 @@ function cacheHitRate(data) {
 // Pass { skipRemote: true } to skip the remote-URL lookup when the caller
 // already has repo identity from the statusline payload.
 function getGitInfo(cwd, { skipRemote = false } = {}) {
-  const opts = { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] };
+  const opts = { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 1000 };
 
   const run = args => {
     try { return execFileSync('git', args, opts).trim(); } catch (_) { return null; }
@@ -134,11 +137,17 @@ function getGitInfo(cwd, { skipRemote = false } = {}) {
                         return first ? run(['remote', 'get-url', first]) : null;
                       })();
     if (remoteUrl) {
-      // Strip trailing .git and protocol prefix for brevity
-      remote = remoteUrl
-        .replace(/\.git$/, '')
-        .replace(/^https?:\/\//, '')
-        .replace(/^git@([^:]+):/, '$1/');
+      // Display repository identity without URL credentials, query, or fragment.
+      if (remoteUrl.includes('://')) {
+        try {
+          const url = new URL(remoteUrl);
+          remote = `${url.host}${url.pathname.replace(/\.git$/, '')}`;
+        } catch (_) {
+          remote = null;
+        }
+      } else {
+        remote = remoteUrl.replace(/^[^@/]+@([^:]+):/, '$1/').replace(/\.git$/, '');
+      }
     }
   }
 
@@ -179,22 +188,6 @@ function getAccountInfo() {
   }
 }
 
-// ── Context window normalization ──────────────────────────────────────────────
-// Fallback only. Newer Claude Code sends a pre-calculated
-// context_window.used_percentage; use that when present. This path runs on
-// older clients that send only remaining_percentage: Claude Code reserves
-// ~16.5% for the autocompact buffer, so normalize to show 100% when that
-// buffer is reached.
-const AUTO_COMPACT_BUFFER_PCT = 16.5;
-
-function normalizeContextUsed(remaining_pct) {
-  const usableRemaining = Math.max(
-    0,
-    ((remaining_pct - AUTO_COMPACT_BUFFER_PCT) / (100 - AUTO_COMPACT_BUFFER_PCT)) * 100
-  );
-  return Math.max(0, Math.min(100, Math.round(100 - usableRemaining)));
-}
-
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 let input = '';
@@ -208,7 +201,7 @@ process.stdin.on('end', () => {
 
     const model    = data.model?.display_name || 'Claude';
     const effort   = data.effort?.level ? mutedGray(` [${data.effort.level}]`) : '';
-    const dir      = data.workspace?.current_dir || process.cwd();
+    const dir      = data.workspace?.current_dir || data.cwd || process.cwd();
     const session  = data.session_id || '';
     const dirname  = path.basename(dir);
     const cw       = data.context_window || {};
@@ -223,13 +216,13 @@ process.stdin.on('end', () => {
     }
 
     // ── Context bar ────────────────────────────────────────────────────────
-    // Prefer the pre-calculated used_percentage; fall back to normalizing
+    // Prefer used_percentage; otherwise use the complement of
     // remaining_percentage on older clients that do not send it.
     let ctxPart = '';
-    if (cw.used_percentage != null) {
+    if (Number.isFinite(cw.used_percentage)) {
       ctxPart = metricBar('CTX', Math.round(cw.used_percentage), 8);
-    } else if (cw.remaining_percentage != null) {
-      ctxPart = metricBar('CTX', normalizeContextUsed(cw.remaining_percentage), 8);
+    } else if (Number.isFinite(cw.remaining_percentage)) {
+      ctxPart = metricBar('CTX', 100 - cw.remaining_percentage, 8);
     }
 
     // ── Context occupancy tokens ────────────────────────────────────────────
@@ -270,10 +263,10 @@ process.stdin.on('end', () => {
     const fiveHour  = data.rate_limits?.five_hour;
     const sevenDay  = data.rate_limits?.seven_day;
 
-    if (fiveHour != null) {
+    if (Number.isFinite(fiveHour?.used_percentage)) {
       const pct = Math.round(fiveHour.used_percentage);
       let resetStr = '';
-      if (fiveHour.resets_at != null) {
+      if (Number.isFinite(fiveHour.resets_at) && Math.abs(fiveHour.resets_at) <= 8.64e12) {
         const d = new Date(fiveHour.resets_at * 1000);
         const hh = String(d.getHours()).padStart(2, '0');
         const mm = String(d.getMinutes()).padStart(2, '0');
@@ -282,10 +275,10 @@ process.stdin.on('end', () => {
       fiveHourPart = metricBar('5H', pct, 6) + resetStr;
     }
 
-    if (sevenDay != null) {
+    if (Number.isFinite(sevenDay?.used_percentage)) {
       const pct = Math.round(sevenDay.used_percentage);
       let resetStr = '';
-      if (sevenDay.resets_at != null) {
+      if (Number.isFinite(sevenDay.resets_at) && Math.abs(sevenDay.resets_at) <= 8.64e12) {
         const d = new Date(sevenDay.resets_at * 1000);
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         const day = days[d.getDay()];

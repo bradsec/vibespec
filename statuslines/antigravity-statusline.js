@@ -40,7 +40,9 @@ function usageColor(pct, text) {
 }
 
 function metricBar(label, pct, segments) {
-  const filled = Math.round((Math.max(0, Math.min(100, pct)) / 100) * segments);
+  if (!Number.isFinite(pct)) return '';
+  pct = Math.max(0, Math.min(100, pct));
+  const filled = Math.round((pct / 100) * segments);
   const empty  = segments - filled;
   return `${cyan(bold(label))} ${usageColor(pct, '█'.repeat(filled))}${mutedGray('░'.repeat(empty))} ${bold(usageColor(pct, Math.round(pct) + '%'))}`;
 }
@@ -58,12 +60,13 @@ function cacheBar(label, pct, segments) {
 // Per-turn cache hit rate: read tokens / all input tokens for the last API
 // call. Fallback only. Returns null when fields are absent.
 function turnCacheHitRate(currentUsage) {
-  if (!currentUsage) return null;
-  const fresh = currentUsage.input_tokens || 0;
-  const read  = currentUsage.cache_read_input_tokens || 0;
-  const write = currentUsage.cache_creation_input_tokens || 0;
+  if (!currentUsage || currentUsage.cache_read_input_tokens == null) return null;
+  const fresh = currentUsage.input_tokens ?? 0;
+  const read  = currentUsage.cache_read_input_tokens ?? 0;
+  const write = currentUsage.cache_creation_input_tokens ?? 0;
+  if (![fresh, read, write].every(n => Number.isFinite(n) && n >= 0)) return null;
   const total = fresh + read + write;
-  if (total <= 0) return null;
+  if (!Number.isFinite(total) || total <= 0) return null;
   return (read / total) * 100;
 }
 
@@ -71,7 +74,7 @@ function turnCacheHitRate(currentUsage) {
 // sends it, mirroring Claude Code; fall back to the per-turn estimate.
 function cacheHitRate(data) {
   const ratio = data.prompt_cache?.hit_ratio;
-  if (typeof ratio === 'number') return ratio * 100;
+  if (Number.isFinite(ratio) && ratio >= 0 && ratio <= 1) return ratio * 100;
   return turnCacheHitRate(data.context_window?.current_usage);
 }
 
@@ -80,7 +83,7 @@ function cacheHitRate(data) {
 // execFileSync with argument arrays: no shell involved, fixed arguments only.
 // --no-optional-locks is a global git flag, so it goes before the subcommand.
 function getGitInfo(cwd) {
-  const opts = { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] };
+  const opts = { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 1000 };
   const run = args => { try { return execFileSync('git', args, opts).trim(); } catch (_) { return null; } };
   if (run(['rev-parse', '--git-dir']) === null) return null;
   const branch = run(['symbolic-ref', '--short', 'HEAD']) || run(['rev-parse', '--short', 'HEAD']) || '?';
@@ -93,20 +96,6 @@ function getGitInfo(cwd) {
     behind   = parseInt(run(['--no-optional-locks', 'rev-list', '--count', 'HEAD..@{u}']), 10) || 0;
   }
   return { branch, dirtyCount, unpushed, behind };
-}
-
-// ── Context normalization ──────────────────────────────────────────────────────
-// Fallback only. Prefer context_window.used_percentage when the host sends it.
-// Otherwise mirror Claude Code's 16.5% autocompact buffer normalization.
-
-const AUTO_COMPACT_BUFFER_PCT = 16.5;
-
-function normalizeCtx(remaining_pct) {
-  const usableRemaining = Math.max(
-    0,
-    ((remaining_pct - AUTO_COMPACT_BUFFER_PCT) / (100 - AUTO_COMPACT_BUFFER_PCT)) * 100
-  );
-  return Math.max(0, Math.min(100, Math.round(100 - usableRemaining)));
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
@@ -130,13 +119,13 @@ process.stdin.on('end', () => {
     const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(n);
 
     // ── Context bar ─────────────────────────────────────────────────────────
-    // Prefer the pre-calculated used_percentage; normalize remaining only as a
+    // Prefer used_percentage; use the complement of remaining_percentage as a
     // fallback for hosts that do not send it.
     let ctxPart = '';
-    if (cw.used_percentage != null) {
+    if (Number.isFinite(cw.used_percentage)) {
       ctxPart = metricBar('CTX', Math.round(cw.used_percentage), 8);
-    } else if (cw.remaining_percentage != null) {
-      ctxPart = metricBar('CTX', normalizeCtx(cw.remaining_percentage), 8);
+    } else if (Number.isFinite(cw.remaining_percentage)) {
+      ctxPart = metricBar('CTX', 100 - cw.remaining_percentage, 8);
     }
 
     // ── Context occupancy tokens ───────────────────────────────────────────
@@ -173,10 +162,10 @@ process.stdin.on('end', () => {
     const fiveHour = data.rate_limits?.five_hour;
     const sevenDay = data.rate_limits?.seven_day;
 
-    if (fiveHour != null) {
+    if (Number.isFinite(fiveHour?.used_percentage)) {
       const pct = Math.round(fiveHour.used_percentage);
       let resetStr = '';
-      if (fiveHour.resets_at != null) {
+      if (Number.isFinite(fiveHour.resets_at) && Math.abs(fiveHour.resets_at) <= 8.64e12) {
         const d  = new Date(fiveHour.resets_at * 1000);
         const hh = String(d.getHours()).padStart(2, '0');
         const mm = String(d.getMinutes()).padStart(2, '0');
@@ -185,10 +174,10 @@ process.stdin.on('end', () => {
       fiveHourPart = metricBar('5H', pct, 6) + resetStr;
     }
 
-    if (sevenDay != null) {
+    if (Number.isFinite(sevenDay?.used_percentage)) {
       const pct = Math.round(sevenDay.used_percentage);
       let resetStr = '';
-      if (sevenDay.resets_at != null) {
+      if (Number.isFinite(sevenDay.resets_at) && Math.abs(sevenDay.resets_at) <= 8.64e12) {
         const d    = new Date(sevenDay.resets_at * 1000);
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         resetStr = mutedGray(` ↺ ${days[d.getDay()]} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`);
@@ -199,7 +188,7 @@ process.stdin.on('end', () => {
     // G1 credits (Antigravity v1.0.3+): field shape TBD, handle gracefully
     let creditsPart = '';
     const credits = data.credits;
-    if (credits != null && credits.used_percentage != null) {
+    if (credits != null && Number.isFinite(credits.used_percentage)) {
       creditsPart = metricBar('G1', Math.round(credits.used_percentage), 6);
     }
 
