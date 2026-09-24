@@ -3,6 +3,8 @@ set -euo pipefail
 
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 CONFIG="$CODEX_HOME/config.toml"
+# The [tui] status_line found before the first install, restored by codex-reset.sh.
+BACKUP="$CODEX_HOME/status_line.vibespec-backup.json"
 
 echo "Installing Codex statusline..."
 echo ""
@@ -21,12 +23,17 @@ mkdir -p "$(dirname "$CONFIG")"
 touch "$CONFIG"
 
 # Insert status_line under [tui] without touching other sections.
-python3 - "$CONFIG" <<'PYEOF'
+# Keeps a custom status_line in $BACKUP before replacing it, and replaces the
+# file in one step through any symlink to its target.
+python3 - "$CONFIG" "$BACKUP" <<'PYEOF'
 status_line = 'status_line = ["model-with-reasoning", "context-used", "used-tokens", "task-progress", "five-hour-limit", "weekly-limit", "git-branch", "current-dir"]'
+import json
+import os
 import re
 import sys
 
 config_path = sys.argv[1]
+backup_path = sys.argv[2]
 with open(config_path, 'r', encoding='utf-8') as f:
     content = f.read()
 
@@ -120,8 +127,27 @@ try:
 except (ValueError, TypeError) as exc:
     raise SystemExit('Error: cannot safely edit TOML; leaving config unchanged: ' + str(exc))
 
-with open(config_path, 'w', encoding='utf-8') as f:
-    f.write(updated)
+def write_atomic(path, text):
+    import os, tempfile
+    target = os.path.realpath(path)
+    mode = os.stat(target).st_mode & 0o777 if os.path.exists(target) else 0o600
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target), prefix=os.path.basename(target) + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.chmod(tmp, mode)
+        os.replace(tmp, target)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+
+existing = before.get('tui', {}).get('status_line') if isinstance(before.get('tui'), dict) else None
+if existing is not None and existing != expected['tui']['status_line'] and not os.path.exists(backup_path):
+    write_atomic(backup_path, json.dumps({
+        'note': 'Codex [tui] status_line before the vibespec install; statuslines/codex-reset.sh restores it.',
+        'status_line': existing,
+    }, indent=2) + '\n')
+write_atomic(config_path, updated)
 PYEOF
 
 echo "Updated: $CONFIG"

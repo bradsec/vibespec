@@ -5,6 +5,8 @@ REPO_RAW="https://raw.githubusercontent.com/bradsec/vibespec/main"
 CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 HOOK_DEST="$CLAUDE_CONFIG_DIR/hooks/cc-statusline.js"
 SETTINGS="$CLAUDE_CONFIG_DIR/settings.json"
+# The statusLine setting found before the first install, restored by cc-reset.sh.
+BACKUP="$CLAUDE_CONFIG_DIR/statusline.vibespec-backup.json"
 
 echo "Installing Claude Code statusline..."
 mkdir -p "$CLAUDE_CONFIG_DIR/hooks"
@@ -43,15 +45,33 @@ else
     echo "to embed the absolute node path. Writing the configuration anyway."
 fi
 
+# Both editors below: keep the statusLine found before the first install in
+# $BACKUP (a statusLine already running $HOOK_DEST is ours, not the user's),
+# and replace settings.json in one step through any symlink to its target.
 mkdir -p "$(dirname "$SETTINGS")"
 if command -v python3 &>/dev/null; then
-    SETTINGS="$SETTINGS" STATUSLINE_CMD="$STATUSLINE_CMD" python3 - <<'PY'
+    SETTINGS="$SETTINGS" STATUSLINE_CMD="$STATUSLINE_CMD" HOOK_DEST="$HOOK_DEST" BACKUP="$BACKUP" python3 - <<'PY'
 import json
 import os
+import tempfile
 from pathlib import Path
 
 settings_path = Path(os.environ["SETTINGS"])
 statusline_cmd = os.environ["STATUSLINE_CMD"]
+backup_path = Path(os.environ["BACKUP"])
+
+def write_atomic(path, text):
+    target = Path(os.path.realpath(path))
+    mode = target.stat().st_mode & 0o777 if target.exists() else 0o600
+    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=target.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.chmod(tmp, mode)
+        os.replace(tmp, target)
+    except BaseException:
+        os.unlink(tmp)
+        raise
 
 cfg = {}
 if settings_path.exists():
@@ -63,32 +83,55 @@ if not isinstance(cfg, dict):
     raise SystemExit(f"Error: expected a JSON object in {settings_path}; leaving it unchanged")
 
 status_line = cfg.get("statusLine")
+ours = isinstance(status_line, dict) and os.environ["HOOK_DEST"] in str(status_line.get("command", ""))
+if not ours and not backup_path.exists():
+    write_atomic(backup_path, json.dumps({
+        "note": "statusLine before the vibespec install; statuslines/cc-reset.sh restores it.",
+        "statusLine": status_line,
+    }, indent=2) + "\n")
 if not isinstance(status_line, dict):
     status_line = {}
 status_line.update({"type": "command", "command": statusline_cmd})
 status_line.setdefault("refreshInterval", 5)
 cfg["statusLine"] = status_line
-settings_path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+write_atomic(settings_path, json.dumps(cfg, indent=2) + "\n")
 PY
     echo "Updated: $SETTINGS"
 elif [[ -n "$NODE_BIN" ]]; then
-    SETTINGS="$SETTINGS" STATUSLINE_CMD="$STATUSLINE_CMD" node -e "
+    SETTINGS="$SETTINGS" STATUSLINE_CMD="$STATUSLINE_CMD" HOOK_DEST="$HOOK_DEST" BACKUP="$BACKUP" node -e "
         const fs = require('fs');
+        const path = require('path');
         const p = process.env.SETTINGS;
         const cmd = process.env.STATUSLINE_CMD;
+        const backup = process.env.BACKUP;
+        const writeAtomic = (file, text) => {
+            let target = file;
+            try { target = fs.realpathSync(file); } catch (e) { /* new file */ }
+            let mode = 0o600;
+            try { mode = fs.statSync(target).mode & 0o777; } catch (e) { /* new file */ }
+            const tmp = path.join(path.dirname(target), '.' + path.basename(target) + '.' + process.pid + '.tmp');
+            fs.writeFileSync(tmp, text, { mode });
+            try { fs.renameSync(tmp, target); } catch (e) { fs.rmSync(tmp, { force: true }); throw e; }
+        };
         let cfg = {};
         if (fs.existsSync(p)) cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
         if (typeof cfg !== 'object' || cfg === null || Array.isArray(cfg)) {
             throw new Error('Expected a JSON object; leaving settings unchanged');
         }
-        const statusLine = cfg.statusLine && typeof cfg.statusLine === 'object' && !Array.isArray(cfg.statusLine)
-            ? cfg.statusLine
-            : {};
+        const current = cfg.statusLine;
+        const ours = current && typeof current === 'object' && String(current.command || '').includes(process.env.HOOK_DEST);
+        if (!ours && !fs.existsSync(backup)) {
+            writeAtomic(backup, JSON.stringify({
+                note: 'statusLine before the vibespec install; statuslines/cc-reset.sh restores it.',
+                statusLine: current === undefined ? null : current,
+            }, null, 2) + '\n');
+        }
+        const statusLine = current && typeof current === 'object' && !Array.isArray(current) ? current : {};
         statusLine.type = 'command';
         statusLine.command = cmd;
         if (statusLine.refreshInterval === undefined) statusLine.refreshInterval = 5;
         cfg.statusLine = statusLine;
-        fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
+        writeAtomic(p, JSON.stringify(cfg, null, 2) + '\n');
     "
     echo "Updated: $SETTINGS"
 else
@@ -97,6 +140,25 @@ else
     echo "Add to $SETTINGS:"
     echo "  {\"statusLine\": {\"type\": \"command\", \"command\": \"$STATUSLINE_CMD\", \"refreshInterval\": 5}}"
 fi
+
+# Render once with a sample payload, so a broken install shows up now rather
+# than as a blank statusline.
+if [[ -n "$NODE_BIN" ]]; then
+    SAMPLE='{"model":{"display_name":"Claude"},"workspace":{"current_dir":"'"$HOME"'"}}'
+    if ! RENDERED="$(printf '%s' "$SAMPLE" | "$NODE_BIN" "$HOOK_DEST" 2>/dev/null)" || [[ -z "$RENDERED" ]]; then
+        echo ""
+        echo "Warning: the statusline did not render with a sample payload. Check $HOOK_DEST."
+    fi
+fi
+
+# Project settings take precedence over $SETTINGS in that project.
+for project_settings in "$PWD/.claude/settings.json" "$PWD/.claude/settings.local.json"; do
+    if [[ -f "$project_settings" && "$(cd "$(dirname "$project_settings")" && pwd -P)/$(basename "$project_settings")" != "$(cd "$(dirname "$SETTINGS")" && pwd -P)/$(basename "$SETTINGS")" ]] \
+        && grep -q '"statusLine"' "$project_settings"; then
+        echo ""
+        echo "Warning: $project_settings sets its own statusLine, which takes precedence in this project."
+    fi
+done
 
 echo ""
 echo "Restart Claude Code to activate the statusline."

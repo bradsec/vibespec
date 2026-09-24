@@ -84,7 +84,7 @@ Command-backed statusline scripts live in `statuslines/`. Codex uses its built-i
 
 | Tool | Current behavior |
 |------|------------------|
-| Claude Code | Installs a documented command-backed statusline under `$CLAUDE_CONFIG_DIR` (default `~/.claude`). It shows context usage, rate limits (including optional gateway spend limits), git status, context-window token counts, session cost, model reasoning effort, and cache hit rate; git details refresh every five seconds. |
+| Claude Code | Installs a documented command-backed statusline under `$CLAUDE_CONFIG_DIR` (default `~/.claude`). It shows context usage, rate limits (including optional gateway spend limits), git status, context-window token counts, session cost, model reasoning effort, and cache hit rate; git details refresh every five seconds from one `git status` call. It follows [`NO_COLOR`](https://no-color.org), and on narrow terminals (the `COLUMNS` Claude Code sets) it drops the account name first, then shortens the bars, then the reset times. |
 | Codex | Configures supported built-in `tui.status_line` items in `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`). Use `/statusline` in Codex to toggle and reorder footer items. |
 | Antigravity CLI | Installs a command-backed formatter showing context usage, rate limits, git status, token counts, session cost, and cache hit rate. Its host integration is unverified: it assumes the Claude Code statusline JSON schema and degrades to whatever fields the host actually sends. |
 
@@ -96,7 +96,9 @@ Context usage prefers the host's `used_percentage`, falling back to `100 - remai
 
 Existing malformed or non-object JSON settings cause installation and reset to stop without replacing the file. Command paths are shell-quoted so spaces and shell metacharacters are treated literally. Codex edits preserve multiline values and unrelated settings, validate the result with Python 3.11+ `tomllib`, and stop without changing the config for invalid TOML or unsupported layouts such as inline `tui` tables and dotted `tui.status_line` assignments.
 
-The statusline menu also includes reset actions to restore each tool's original statusline behavior. Resets remove only the statusline-related setting for the selected tool and leave unrelated config keys intact.
+Installs replace `settings.json` and `config.toml` in one step (a temp file, then a rename) and write through a symlink to its target, so dotfile-managed configs stay symlinks. The Claude Code installer renders the statusline once with a sample payload and warns if that fails, and warns when the current directory's `.claude/settings.json` or `settings.local.json` sets its own `statusLine`, which takes precedence in that project.
+
+The statusline menu also includes reset actions to restore each tool's original statusline behavior. The first Claude Code or Codex install keeps any statusline setting you had before in `$CLAUDE_CONFIG_DIR/statusline.vibespec-backup.json` or `$CODEX_HOME/status_line.vibespec-backup.json`; reset puts it back and deletes the backup, and without a backup it removes the setting so the tool uses its default. Resets leave unrelated config keys intact.
 
 ## Development
 

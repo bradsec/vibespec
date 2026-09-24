@@ -122,4 +122,49 @@ assert_has "$out" "example.com/acme/proj" "cc remote identity"
 assert_lacks "$out" "secret" "cc remote password"
 assert_lacks "$out" "private" "cc remote query"
 
+# Git: branch, changed files and upstream counts from one status call.
+repo="$TEST_TMP/gitrepo"
+g() { git -C "$repo" -c user.name=t -c user.email=t@t -c commit.gpgsign=false "$@"; }
+git init -q -b main "$repo"
+printf '1' > "$repo/a"
+g add a
+g commit -q -m one
+g remote add origin https://example.com/acme/proj.git
+g update-ref refs/remotes/origin/main HEAD
+g config branch.main.remote origin
+g config branch.main.merge refs/heads/main
+g commit -q --allow-empty -m two
+printf '2' > "$repo/a"
+printf '1' > "$repo/b"
+# A new session id each run skips the five-second git cache.
+out="$(run cc-statusline.js "{\"cwd\":\"$repo\",\"session_id\":\"git1\"}")"
+assert_has "$out" "GIT main · ~2 · ↑1" "cc git status from porcelain v2"
+g checkout -q --detach
+out="$(run cc-statusline.js "{\"cwd\":\"$repo\",\"session_id\":\"git2\"}")"
+case "$out" in *"GIT main"*) fail "cc detached HEAD shows a branch: $out" ;; esac
+
+# Colors: NO_COLOR turns them off; critical usage is bold, not blinking.
+busy='{"model":{"display_name":"Opus"},"context_window":{"used_percentage":40},"rate_limits":{"five_hour":{"used_percentage":95,"resets_at":1799999999},"seven_day":{"used_percentage":20,"resets_at":1799999999}}}'
+raw="$(printf '%s' "$busy" | node "$ROOT/statuslines/cc-statusline.js")"
+case "$raw" in *$'\x1b[5;'*) fail "cc critical usage blinks" ;; esac
+raw="$(printf '%s' "$busy" | NO_COLOR=1 node "$ROOT/statuslines/cc-statusline.js")"
+case "$raw" in *$'\x1b['*) fail "cc ignores NO_COLOR" ;; esac
+
+# Narrow terminals: account goes first, then bar length, then reset times.
+printf '%s' '{"oauthAccount":{"displayName":"Sam","organizationType":"claude_max"}}' > "$CLAUDE_CONFIG_DIR/.claude.json"
+line1() { printf '%s' "$busy" | COLUMNS="$1" node "$ROOT/statuslines/cc-statusline.js" | sed -E 's/\x1b\[[0-9;]*m//g' | head -n 1; }
+wide="$(line1 400)"
+assert_has "$wide" "Sam · Max │ Opus" "cc wide shows account"
+no_account="$(line1 $(( ${#wide} - 1 )))"
+case "$no_account" in "Opus"*) ;; *) fail "cc narrow keeps account: $no_account" ;; esac
+assert_has "$no_account" "CTX ███░░░░░" "cc narrow keeps full bars first"
+tight="$(line1 20)"
+assert_has "$tight" "CTX ██░░ 40%" "cc tight shortens bars"
+assert_lacks "$tight" "↺" "cc tight drops reset times"
+
+# Account info is re-read when ~/.claude.json changes.
+printf '%s' '{"oauthAccount":{"displayName":"Alexandra"}}' > "$CLAUDE_CONFIG_DIR/.claude.json"
+assert_has "$(line1 400)" "Alexandra" "cc account cache follows file changes"
+rm "$CLAUDE_CONFIG_DIR/.claude.json"
+
 echo "statusline script tests passed"

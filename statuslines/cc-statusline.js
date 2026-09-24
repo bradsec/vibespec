@@ -11,10 +11,12 @@ const { execFileSync } = require('child_process');
 
 // ── Visual helpers ────────────────────────────────────────────────────────────
 
-// ANSI helpers — reset is explicit so colors never bleed across segments
+// ANSI helpers — reset is explicit so colors never bleed across segments.
+// NO_COLOR (https://no-color.org): any non-empty value turns colors off.
 const R = '\x1b[0m';
+const NO_COLOR = !!process.env.NO_COLOR;
 
-function color(ansi, text) { return `${ansi}${text}${R}`; }
+function color(ansi, text) { return NO_COLOR ? String(text) : `${ansi}${text}${R}`; }
 
 // Named palette — every color defined once, used by name throughout
 function bold(t)       { return color('\x1b[1m',           t); }
@@ -26,16 +28,17 @@ function green(t)      { return color('\x1b[38;5;120m',    t); }   // soft green
 function amber(t)      { return color('\x1b[38;5;214m',    t); }   // orange-amber — moderate
 function orange(t)     { return color('\x1b[38;5;208m',    t); }   // deep orange — elevated
 function red(t)        { return color('\x1b[38;5;203m',    t); }   // soft red — high
-function blink_red(t)  { return color('\x1b[5;38;5;196m',  t); }   // blinking bright red — critical
+function critical(t)   { return color('\x1b[1;38;5;196m',  t); }   // blinking bright red — critical
 function mutedGray(t)  { return color('\x1b[38;5;244m',    t); }   // separator / secondary
 
-// Color ramp for usage bars — green → amber → orange → red → blink
+// Color ramp for usage bars — green → amber → orange → red → bold red.
+// No blink: it distracts and not every terminal supports it.
 function usageColor(pct, text) {
   if (pct <  50) return green(text);
   if (pct <  65) return amber(text);
   if (pct <  80) return orange(text);
   if (pct <  92) return red(text);
-  return blink_red(text);
+  return critical(text);
 }
 
 // Build a labelled metric block with distinct label styling:
@@ -125,25 +128,12 @@ function getGitInfo(cwd, { skipRemote = false, sessionId = '' } = {}) {
     try { return execFileSync('git', args, opts).trim(); } catch (_) { return null; }
   };
 
-  // Confirm we're in a git repo (also fails when git is not installed)
-  if (run(['rev-parse', '--git-dir']) === null) return null;
-
-  // Branch name (or short SHA when detached HEAD)
-  const branch = run(['symbolic-ref', '--short', 'HEAD']) ||
-                 run(['rev-parse', '--short', 'HEAD']) ||
-                 '?';
-
-  // Dirty file count: modified + added + deleted (tracked changes only + untracked)
-  const statusLines = run(['--no-optional-locks', 'status', '--porcelain']) || '';
-  const dirtyCount  = statusLines ? statusLines.split('\n').filter(Boolean).length : 0;
-
-  // Commits ahead of / behind @{upstream}
-  let unpushed = 0;
-  let behind   = 0;
-  if (run(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])) {
-    unpushed = parseInt(run(['--no-optional-locks', 'rev-list', '--count', '@{u}..HEAD']), 10) || 0;
-    behind   = parseInt(run(['--no-optional-locks', 'rev-list', '--count', 'HEAD..@{u}']), 10) || 0;
-  }
+  // One call gives branch, upstream ahead/behind and the changed files; it
+  // fails outside a repo or without git. Each extra git process adds lag in
+  // large repos, and the statusline re-runs every few seconds.
+  const status = run(['--no-optional-locks', 'status', '--porcelain=v2', '--branch']);
+  if (status === null) return null;
+  const { branch, dirtyCount, unpushed, behind } = parseGitStatus(status);
 
   // Remote URL for origin (or first remote if origin absent)
   let remote = null;
@@ -181,6 +171,31 @@ function getGitInfo(cwd, { skipRemote = false, sessionId = '' } = {}) {
   return result;
 }
 
+// Parses `git status --porcelain=v2 --branch` output.
+function parseGitStatus(status) {
+  let oid = null;
+  let head = null;
+  let unpushed = 0;
+  let behind = 0;
+  let dirtyCount = 0;
+  for (const line of status.split('\n')) {
+    if (!line) continue;
+    if (!line.startsWith('# ')) { dirtyCount++; continue; }
+    const [key, ...rest] = line.slice(2).split(' ');
+    if (key === 'branch.oid') oid = rest[0];
+    else if (key === 'branch.head') head = rest[0];
+    else if (key === 'branch.ab') {
+      unpushed = Math.abs(parseInt(rest[0], 10)) || 0;
+      behind   = Math.abs(parseInt(rest[1], 10)) || 0;
+    }
+  }
+  // Detached HEAD shows the short SHA, like `git rev-parse --short`.
+  const branch = head && head !== '(detached)'
+    ? head
+    : (oid && oid !== '(initial)' ? oid.slice(0, 7) : '?');
+  return { branch, dirtyCount, unpushed, behind };
+}
+
 // ── Account / plan ──────────────────────────────────────────────────────────
 // Account name and subscription plan are NOT in the statusLine JSON payload
 // (open feature requests anthropics/claude-code#24679, #26219). They live in
@@ -195,6 +210,30 @@ function getAccountInfo() {
     ? path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json')
     : path.join(os.homedir(), '.claude.json');
 
+  // ~/.claude.json grows with project history, so keep the result in a temp
+  // file keyed on the config file's size and mtime and parse it again only
+  // when it changes.
+  let stat;
+  try { stat = fs.statSync(configFile); } catch (_) { return null; }
+  const key = `${stat.size}:${stat.mtimeMs}`;
+  const cachePath = path.join(os.tmpdir(),
+    `vibespec-cc-account-${crypto.createHash('sha256').update(configFile).digest('hex')}.json`);
+  try {
+    const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    if (cached.key === key) return cached.info;
+  } catch (_) {}
+  const info = readAccountInfo(configFile);
+  const tempPath = `${cachePath}.${crypto.randomBytes(8).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify({ key, info }), { mode: 0o600, flag: 'wx' });
+    fs.renameSync(tempPath, cachePath);
+  } catch (_) {
+    try { fs.unlinkSync(tempPath); } catch (_) {}
+  }
+  return info;
+}
+
+function readAccountInfo(configFile) {
   try {
     const acct = JSON.parse(fs.readFileSync(configFile, 'utf8')).oauthAccount;
     if (!acct) return null;
@@ -213,6 +252,20 @@ function getAccountInfo() {
   } catch (_) {
     return null;
   }
+}
+
+// Width of a rendered line in terminal columns: ANSI codes take none, and
+// every character used here (including the bar and arrow glyphs) takes one.
+function visibleWidth(text) {
+  return [...text.replace(/\x1b\[[0-9;]*m/g, '')].length;
+}
+
+// The first layout that fits the terminal, else the most compact one.
+// Claude Code sets COLUMNS for statusline commands; without it, the first.
+function fitLine(layouts) {
+  const cols = parseInt(process.env.COLUMNS, 10);
+  if (!Number.isFinite(cols) || cols <= 0) return layouts[0];
+  return layouts.find((l) => visibleWidth(l) <= cols) || layouts[layouts.length - 1];
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -243,12 +296,10 @@ process.stdin.on('end', () => {
     // ── Context bar ────────────────────────────────────────────────────────
     // Prefer used_percentage; otherwise use the complement of
     // remaining_percentage on older clients that do not send it.
-    let ctxPart = '';
-    if (Number.isFinite(cw.used_percentage)) {
-      ctxPart = metricBar('CTX', Math.round(cw.used_percentage), 8);
-    } else if (Number.isFinite(cw.remaining_percentage)) {
-      ctxPart = metricBar('CTX', 100 - cw.remaining_percentage, 8);
-    }
+    // Built per layout (see fitLine): compact layouts use shorter bars.
+    const ctxPct = Number.isFinite(cw.used_percentage) ? Math.round(cw.used_percentage)
+      : Number.isFinite(cw.remaining_percentage) ? 100 - cw.remaining_percentage : null;
+    const ctxPart = (segments) => (ctxPct === null ? '' : metricBar('CTX', ctxPct, segments));
 
     // ── Context occupancy tokens ────────────────────────────────────────────
     // context_window.total_* are the tokens currently in the window (from the
@@ -282,43 +333,26 @@ process.stdin.on('end', () => {
     }
 
     // ── Rate limit bars (claude.ai subscription only) ──────────────────────
-    let fiveHourPart = '';
-    let sevenDayPart = '';
-    let spendLimitPart = '';
-
+    // Built per layout, like the context bar; compact layouts can also drop
+    // the reset times.
     const fiveHour  = data.rate_limits?.five_hour;
     const sevenDay  = data.rate_limits?.seven_day;
     const spendLimit = data.rate_limits?.spend_limit;
 
-    if (Number.isFinite(fiveHour?.used_percentage)) {
-      const pct = Math.round(fiveHour.used_percentage);
-      let resetStr = '';
-      if (Number.isFinite(fiveHour.resets_at) && Math.abs(fiveHour.resets_at) <= 8.64e12) {
-        const d = new Date(fiveHour.resets_at * 1000);
-        const hh = String(d.getHours()).padStart(2, '0');
-        const mm = String(d.getMinutes()).padStart(2, '0');
-        resetStr = mutedGray(` ↺ ${hh}:${mm}`);
-      }
-      fiveHourPart = metricBar('5H', pct, 6) + resetStr;
-    }
-
-    if (Number.isFinite(sevenDay?.used_percentage)) {
-      const pct = Math.round(sevenDay.used_percentage);
-      let resetStr = '';
-      if (Number.isFinite(sevenDay.resets_at) && Math.abs(sevenDay.resets_at) <= 8.64e12) {
-        const d = new Date(sevenDay.resets_at * 1000);
-        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const day = days[d.getDay()];
-        const hh = String(d.getHours()).padStart(2, '0');
-        const mm = String(d.getMinutes()).padStart(2, '0');
-        resetStr = mutedGray(` ↺ ${day} ${hh}:${mm}`);
-      }
-      sevenDayPart = metricBar('7D', pct, 6) + resetStr;
-    }
-
-    if (Number.isFinite(spendLimit?.used_percentage)) {
-      spendLimitPart = metricBar('SPEND', spendLimit.used_percentage, 6);
-    }
+    const resetSuffix = (epochSec, withDay) => {
+      if (!Number.isFinite(epochSec) || Math.abs(epochSec) > 8.64e12) return '';
+      const d = new Date(epochSec * 1000);
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      const day = withDay ? `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()]} ` : '';
+      return mutedGray(` ↺ ${day}${hh}:${mm}`);
+    };
+    const windowPart = (label, w, withDay, segments, resets) => (Number.isFinite(w?.used_percentage)
+      ? metricBar(label, Math.round(w.used_percentage), segments) + (resets ? resetSuffix(w.resets_at, withDay) : '')
+      : '');
+    const spendLimitPart = (segments) => (Number.isFinite(spendLimit?.used_percentage)
+      ? metricBar('SPEND', spendLimit.used_percentage, segments)
+      : '');
 
     // ── Git info ───────────────────────────────────────────────────────────
     // repo identity comes from the payload when available, so skip the extra
@@ -378,27 +412,36 @@ process.stdin.on('end', () => {
           .join(dotSep)
       : null;
 
-    const leftParts = [
-      acctPart,
-      softBlue(model) + effort,
-      sessionName ? bold(yellow(sessionName)) : null,
-    ].filter(Boolean).join(sep);
+    const line1For = ({ account, bars, resets }) => {
+      const leftParts = [
+        account ? acctPart : null,
+        softBlue(model) + effort,
+        sessionName ? bold(yellow(sessionName)) : null,
+      ].filter(Boolean).join(sep);
+      const rightParts = [
+        ctxPart(bars ? 8 : 4),
+        windowPart('5H', fiveHour, false, bars ? 6 : 3, resets),
+        windowPart('7D', sevenDay, true, bars ? 6 : 3, resets),
+        spendLimitPart(bars ? 6 : 3),
+      ].filter(Boolean).join(dotSep);
+      return rightParts ? leftParts + sep + rightParts : leftParts;
+    };
+    // Narrow terminals: drop the account first, then shorten the bars, then
+    // the reset times.
+    const line1 = fitLine([
+      { account: true, bars: true, resets: true },
+      { account: false, bars: true, resets: true },
+      { account: false, bars: false, resets: true },
+      { account: false, bars: false, resets: false },
+    ].map(line1For));
 
-    const rightParts = [ctxPart, fiveHourPart, sevenDayPart, spendLimitPart]
-      .filter(Boolean)
-      .join(dotSep);
-
-    const line1 = rightParts
-      ? leftParts + sep + rightParts
-      : leftParts;
-
-    // Line 2: dir (+ remote) · git · tokens · cost · cache
-    let dirPart = white(dirname);
-    if (remoteLabel) {
-      dirPart += dotSep + mutedGray(remoteLabel);
-    }
-
-    const line2Parts = [dirPart, gitPart, tokenPart, costPart, cachePart].filter(Boolean).join(dotSep);
+    // Line 2: dir (+ remote) · git · tokens · cost · cache; the remote goes
+    // first when it doesn't fit.
+    const line2For = (withRemote) => {
+      const dirPart = white(dirname) + (withRemote && remoteLabel ? dotSep + mutedGray(remoteLabel) : '');
+      return [dirPart, gitPart, tokenPart, costPart, cachePart].filter(Boolean).join(dotSep);
+    };
+    const line2Parts = fitLine([line2For(true), line2For(false)]);
     const output     = line2Parts
       ? line1 + '\n' + line2Parts
       : line1;

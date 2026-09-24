@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Installers honor these over HOME. Claude Code exports CLAUDE_CONFIG_DIR, so
+# tests run from inside it would otherwise edit the real configuration.
+unset CLAUDE_CONFIG_DIR CODEX_HOME
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 

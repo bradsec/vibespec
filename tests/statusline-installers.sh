@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Installers honor these over HOME. Claude Code exports CLAUDE_CONFIG_DIR, so
+# tests run from inside it would otherwise edit the real configuration.
+unset CLAUDE_CONFIG_DIR CODEX_HOME
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -184,6 +187,88 @@ EOF
     assert_not_contains "$settings" '"statusLine"'
 }
 
+test_cc_install_backs_up_and_reset_restores() {
+    local home="$TMPDIR/cc-backup"
+    local settings="$home/.claude/settings.json"
+    mkdir -p "$(dirname "$settings")"
+    printf '%s\n' '{"keepme": true, "statusLine": {"type": "command", "command": "my-status", "padding": 2}}' > "$settings"
+
+    HOME="$home" bash "$ROOT/statuslines/cc-install.sh" >/dev/null
+    # A second install must not replace the backup with our own setting.
+    HOME="$home" bash "$ROOT/statuslines/cc-install.sh" >/dev/null
+    assert_contains "$home/.claude/statusline.vibespec-backup.json" '"command": "my-status"'
+    assert_contains "$settings" "cc-statusline.js"
+
+    local out
+    out="$(HOME="$home" bash "$ROOT/statuslines/cc-reset.sh")"
+    case "$out" in *"Restored your previous statusLine"*) ;; *) echo "unexpected reset output: $out" >&2; exit 1 ;; esac
+    assert_contains "$settings" '"command": "my-status"'
+    assert_contains "$settings" '"padding": 2'
+    assert_contains "$settings" '"keepme": true'
+    test ! -e "$home/.claude/statusline.vibespec-backup.json"
+}
+
+test_cc_install_keeps_symlinked_settings() {
+    local home="$TMPDIR/cc-symlink"
+    mkdir -p "$home/.claude" "$home/dotfiles"
+    printf '{"keepme": true}\n' > "$home/dotfiles/settings.json"
+    ln -s "$home/dotfiles/settings.json" "$home/.claude/settings.json"
+
+    HOME="$home" bash "$ROOT/statuslines/cc-install.sh" >/dev/null
+    test -L "$home/.claude/settings.json"
+    assert_contains "$home/dotfiles/settings.json" '"statusLine"'
+    HOME="$home" bash "$ROOT/statuslines/cc-reset.sh" >/dev/null
+    test -L "$home/.claude/settings.json"
+    assert_not_contains "$home/dotfiles/settings.json" '"statusLine"'
+    if compgen -G "$home/dotfiles/*.tmp" >/dev/null; then
+        echo "temp files left behind" >&2
+        exit 1
+    fi
+}
+
+test_cc_install_render_check_and_project_warning() {
+    local home="$TMPDIR/cc-check"
+    local project="$TMPDIR/cc-check-project"
+    mkdir -p "$home" "$project/.claude"
+    printf '{"statusLine": {"type": "command", "command": "x"}}\n' > "$project/.claude/settings.local.json"
+
+    local out
+    out="$(cd "$project" && HOME="$home" bash "$ROOT/statuslines/cc-install.sh")"
+    case "$out" in *"settings.local.json sets its own statusLine"*) ;; *) echo "missing project warning: $out" >&2; exit 1 ;; esac
+    case "$out" in *"did not render"*) echo "render check failed: $out" >&2; exit 1 ;; esac
+
+    # A broken formatter is reported.
+    local fixture="$TMPDIR/cc-check-broken"
+    mkdir -p "$fixture"
+    cp "$ROOT/statuslines/cc-install.sh" "$fixture/"
+    printf 'process.exit(1)\n' > "$fixture/cc-statusline.js"
+    out="$(HOME="$home" bash "$fixture/cc-install.sh")"
+    case "$out" in *"did not render"*) ;; *) echo "missing render warning: $out" >&2; exit 1 ;; esac
+}
+
+test_codex_install_backs_up_and_reset_restores() {
+    local home="$TMPDIR/codex-backup"
+    local config="$home/.codex/config.toml"
+    mkdir -p "$(dirname "$config")"
+    printf '[tui]\nstatus_line = ["git-branch", "context-used"]\n' > "$config"
+
+    HOME="$home" CODEX_HOME="$home/.codex" bash "$ROOT/statuslines/codex-install.sh" >/dev/null
+    HOME="$home" CODEX_HOME="$home/.codex" bash "$ROOT/statuslines/codex-install.sh" >/dev/null
+    assert_contains "$home/.codex/status_line.vibespec-backup.json" '"git-branch"'
+
+    HOME="$home" CODEX_HOME="$home/.codex" bash "$ROOT/statuslines/codex-reset.sh" >/dev/null
+    assert_contains "$config" 'status_line = ["git-branch", "context-used"]'
+    test ! -e "$home/.codex/status_line.vibespec-backup.json"
+
+    # No custom status_line before install: nothing to back up, reset removes it.
+    local fresh="$TMPDIR/codex-backup-fresh"
+    mkdir -p "$fresh/.codex"
+    HOME="$fresh" CODEX_HOME="$fresh/.codex" bash "$ROOT/statuslines/codex-install.sh" >/dev/null
+    test ! -e "$fresh/.codex/status_line.vibespec-backup.json"
+    HOME="$fresh" CODEX_HOME="$fresh/.codex" bash "$ROOT/statuslines/codex-reset.sh" >/dev/null
+    assert_not_contains "$fresh/.codex/config.toml" 'status_line'
+}
+
 test_json_settings_preserved_and_paths_quoted() {
     ROOT="$ROOT" TEST_TMP="$TMPDIR" python3 - <<'PYTEST'
 import json
@@ -272,7 +357,12 @@ for action in ("install", "reset"):
         subprocess.run(["bash", str(root / "statuslines/codex-install.sh")], env=env, check=True, capture_output=True)
         assert config.read_text() == updated
     else:
-        assert "status_line" not in result["tui"]
+        # The install above backed up the custom status_line; reset puts it
+        # back once, then a second reset falls back to Codex's defaults.
+        assert result["tui"]["status_line"] == ["old", "value]"], result["tui"]
+        assert not (home / ".codex/status_line.vibespec-backup.json").exists()
+        subprocess.run(["bash", str(root / "statuslines/codex-reset.sh")], env=env, check=True, capture_output=True)
+        assert "status_line" not in tomllib.loads(config.read_text())["tui"]
     for unsupported in (
         '[tui]\nstatus_line = ["unterminated"\n',
         'tui.status_line = ["old"]\n',
@@ -287,6 +377,10 @@ PYTEST
 }
 
 test_codex_multiline_toml
+test_cc_install_backs_up_and_reset_restores
+test_cc_install_keeps_symlinked_settings
+test_cc_install_render_check_and_project_warning
+test_codex_install_backs_up_and_reset_restores
 
 test_wrapper_propagates_installer_failure
 
