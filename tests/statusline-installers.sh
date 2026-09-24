@@ -31,12 +31,11 @@ test_codex_install_creates_tui_status_line() {
     local home="$TMPDIR/codex-create"
     mkdir -p "$home"
 
-    HOME="$home" bash "$ROOT/statuslines/codex-install.sh" >/dev/null
+    HOME="$home" CODEX_HOME="$home/.codex" bash "$ROOT/statuslines/codex-install.sh" >/dev/null
 
     local config="$home/.codex/config.toml"
     assert_contains "$config" "[tui]"
     assert_contains "$config" 'status_line = ["model-with-reasoning", "context-used", "used-tokens", "task-progress", "five-hour-limit", "weekly-limit", "git-branch", "current-dir"]'
-    test -x "$home/.codex/statusline.js"
 }
 
 test_codex_install_preserves_other_status_line_keys() {
@@ -55,7 +54,7 @@ status_line = ["old"]
 status_line = ["also-keep"]
 EOF
 
-    HOME="$home" bash "$ROOT/statuslines/codex-install.sh" >/dev/null
+    HOME="$home" CODEX_HOME="$home/.codex" bash "$ROOT/statuslines/codex-install.sh" >/dev/null
 
     assert_contains "$config" 'status_line = ["do-not-touch"]'
     assert_contains "$config" 'status_line = ["also-keep"]'
@@ -77,7 +76,7 @@ status_line = ["remove"]
 theme = "ansi"
 EOF
 
-    HOME="$home" bash "$ROOT/statuslines/codex-reset.sh" >/dev/null
+    HOME="$home" CODEX_HOME="$home/.codex" bash "$ROOT/statuslines/codex-reset.sh" >/dev/null
 
     assert_contains "$config" 'status_line = ["keep"]'
     assert_contains "$config" 'theme = "ansi"'
@@ -256,7 +255,7 @@ original = '\n'.join([
     '"status_line" = [', '  "old", # comment with ]', '  "value]",', ']',
     '[other] # other section', 'status_line = ["keep"]', '',
 ])
-env = dict(os.environ, HOME=str(home))
+env = dict(os.environ, HOME=str(home), CODEX_HOME=str(home / '.codex'))
 for action in ("install", "reset"):
     config.write_text(original)
     subprocess.run(["bash", str(root / "statuslines" / f"codex-{action}.sh")], env=env, check=True, capture_output=True)

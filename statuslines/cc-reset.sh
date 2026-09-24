@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SETTINGS="${HOME}/.claude/settings.json"
+CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+SETTINGS="$CLAUDE_CONFIG_DIR/settings.json"
 
 echo "Resetting Claude Code statusline to default..."
 

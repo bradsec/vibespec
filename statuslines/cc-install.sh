@@ -2,11 +2,12 @@
 set -euo pipefail
 
 REPO_RAW="https://raw.githubusercontent.com/bradsec/vibespec/main"
-HOOK_DEST="$HOME/.claude/hooks/cc-statusline.js"
-SETTINGS="$HOME/.claude/settings.json"
+CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+HOOK_DEST="$CLAUDE_CONFIG_DIR/hooks/cc-statusline.js"
+SETTINGS="$CLAUDE_CONFIG_DIR/settings.json"
 
 echo "Installing Claude Code statusline..."
-mkdir -p "$HOME/.claude/hooks"
+mkdir -p "$CLAUDE_CONFIG_DIR/hooks"
 
 LOCAL_JS="$(dirname "${BASH_SOURCE[0]}")/cc-statusline.js"
 if [[ -f "$LOCAL_JS" ]]; then
@@ -61,7 +62,12 @@ if settings_path.exists():
 if not isinstance(cfg, dict):
     raise SystemExit(f"Error: expected a JSON object in {settings_path}; leaving it unchanged")
 
-cfg["statusLine"] = {"type": "command", "command": statusline_cmd}
+status_line = cfg.get("statusLine")
+if not isinstance(status_line, dict):
+    status_line = {}
+status_line.update({"type": "command", "command": statusline_cmd})
+status_line.setdefault("refreshInterval", 5)
+cfg["statusLine"] = status_line
 settings_path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
 PY
     echo "Updated: $SETTINGS"
@@ -75,7 +81,13 @@ elif [[ -n "$NODE_BIN" ]]; then
         if (typeof cfg !== 'object' || cfg === null || Array.isArray(cfg)) {
             throw new Error('Expected a JSON object; leaving settings unchanged');
         }
-        cfg.statusLine = { type: 'command', command: cmd };
+        const statusLine = cfg.statusLine && typeof cfg.statusLine === 'object' && !Array.isArray(cfg.statusLine)
+            ? cfg.statusLine
+            : {};
+        statusLine.type = 'command';
+        statusLine.command = cmd;
+        if (statusLine.refreshInterval === undefined) statusLine.refreshInterval = 5;
+        cfg.statusLine = statusLine;
         fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
     "
     echo "Updated: $SETTINGS"
@@ -83,7 +95,7 @@ else
     echo ""
     echo "Warning: neither python3 nor node found to edit JSON."
     echo "Add to $SETTINGS:"
-    echo "  {\"statusLine\": {\"type\": \"command\", \"command\": \"$STATUSLINE_CMD\"}}"
+    echo "  {\"statusLine\": {\"type\": \"command\", \"command\": \"$STATUSLINE_CMD\", \"refreshInterval\": 5}}"
 fi
 
 echo ""

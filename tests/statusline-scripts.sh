@@ -90,19 +90,6 @@ assert_has "$out" "60%"             "agy prompt_cache.hit_ratio"
 out="$(run antigravity-statusline.js '{"model":"Gemini"}')"
 assert_has "$out" "Gemini" "agy minimal payload"
 
-# ── Codex (placeholder schema) ───────────────────────────────────────────────
-
-codex_json='{"model":"gpt-5.6","reasoning_effort":"high","cwd":"/tmp/proj","git_branch":"main",
-"context":{"used_percent":17,"used_tokens":176000,"window_tokens":1000000},
-"prompt_cache":{"hit_ratio":0.8}}'
-out="$(run codex-statusline.js "$codex_json")"
-assert_has "$out" "gpt-5.6 [high]" "codex model + effort"
-assert_has "$out" "17%"            "codex context bar"
-assert_has "$out" "80%"            "codex prompt_cache.hit_ratio"
-
-out="$(run codex-statusline.js '{"model":"gpt-5.6"}')"
-assert_has "$out" "gpt-5.6" "codex minimal payload"
-
 assert_lacks() {
     local haystack="$1" needle="$2" label="$3"
     case "$haystack" in
@@ -110,7 +97,7 @@ assert_lacks() {
     esac
 }
 
-for script in cc-statusline.js antigravity-statusline.js codex-statusline.js; do
+for script in cc-statusline.js antigravity-statusline.js; do
     out="$(run "$script" '{"context_window":{"current_usage":{"input_tokens":1000}},"context":{"current_usage":{"input_tokens":1000}}}')"
     assert_lacks "$out" "CACHE" "$script absent cache telemetry"
     out="$(run "$script" '{"context_window":{"used_percentage":"bad"},"context":{"used_percent":"bad"},"rate_limits":{"five_hour":{}},"limits":{"weekly":{}},"prompt_cache":{"hit_ratio":1e999}}')"

@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 // ── Visual helpers ────────────────────────────────────────────────────────────
@@ -20,7 +21,7 @@ function bold(t)       { return color('\x1b[1m',           t); }
 function white(t)      { return color('\x1b[97m',          t); }   // bright white — primary info
 function softBlue(t)   { return color('\x1b[38;5;111m',    t); }   // #87afff — model name
 function cyan(t)       { return color('\x1b[38;5;87m',     t); }   // bright cyan — metric labels
-function yellow(t)     { return color('\x1b[38;5;220m',    t); }   // amber — active task / warnings
+function yellow(t)     { return color('\x1b[38;5;220m',    t); }   // amber — session name / warnings
 function green(t)      { return color('\x1b[38;5;120m',    t); }   // soft green — healthy
 function amber(t)      { return color('\x1b[38;5;214m',    t); }   // orange-amber — moderate
 function orange(t)     { return color('\x1b[38;5;208m',    t); }   // deep orange — elevated
@@ -45,12 +46,13 @@ function usageColor(pct, text) {
 // - Empty bar: muted gray — low visual weight
 function metricBar(label, pct, segments) {
   if (!Number.isFinite(pct)) return '';
-  pct = Math.max(0, Math.min(100, pct));
+  const shownPct = Math.max(0, pct);
+  pct = Math.min(100, shownPct);
   const filled = Math.round((pct / 100) * segments);
   const empty  = segments - filled;
   const filledBar = usageColor(pct, '█'.repeat(filled));
   const emptyBar  = mutedGray('░'.repeat(empty));
-  const pctStr    = bold(usageColor(pct, String(Math.round(pct)) + '%'));
+  const pctStr    = bold(usageColor(pct, String(Math.round(shownPct)) + '%'));
   return `${cyan(bold(label))} ${filledBar}${emptyBar} ${pctStr}`;
 }
 
@@ -99,7 +101,24 @@ function cacheHitRate(data) {
 // --no-optional-locks is a global git flag, so it goes before the subcommand.
 // Pass { skipRemote: true } to skip the remote-URL lookup when the caller
 // already has repo identity from the statusline payload.
-function getGitInfo(cwd, { skipRemote = false } = {}) {
+function getGitInfo(cwd, { skipRemote = false, sessionId = '' } = {}) {
+  const cacheKey = crypto.createHash('sha256')
+    .update(`${sessionId}\0${cwd}\0${skipRemote}`)
+    .digest('hex');
+  const cachePath = path.join(os.tmpdir(), `vibespec-cc-status-${cacheKey}.json`);
+  try {
+    const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    const ageMs = Date.now() - fs.statSync(cachePath).mtimeMs;
+    if (ageMs >= 0 && ageMs < 5000 &&
+        typeof cached.branch === 'string' &&
+        Number.isInteger(cached.dirtyCount) &&
+        Number.isInteger(cached.unpushed) &&
+        Number.isInteger(cached.behind) &&
+        (cached.remote === null || typeof cached.remote === 'string')) {
+      return cached;
+    }
+  } catch (_) {}
+
   const opts = { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 1000 };
 
   const run = args => {
@@ -151,7 +170,15 @@ function getGitInfo(cwd, { skipRemote = false } = {}) {
     }
   }
 
-  return { branch, dirtyCount, unpushed, behind, remote };
+  const result = { branch, dirtyCount, unpushed, behind, remote };
+  const tempPath = `${cachePath}.${crypto.randomBytes(8).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(result), { mode: 0o600, flag: 'wx' });
+    fs.renameSync(tempPath, cachePath);
+  } catch (_) {
+    try { fs.unlinkSync(tempPath); } catch (_) {}
+  }
+  return result;
 }
 
 // ── Account / plan ──────────────────────────────────────────────────────────
@@ -162,8 +189,8 @@ function getGitInfo(cwd, { skipRemote = false } = {}) {
 // Honors CLAUDE_CONFIG_DIR. The field is internal/undocumented, so every access
 // is guarded and a missing file or shape is treated as "no account info".
 function getAccountInfo() {
-  // Single config root, mirroring the todos lookup: an explicit CLAUDE_CONFIG_DIR
-  // wins outright so a different account root never leaks the home account.
+  // An explicit CLAUDE_CONFIG_DIR wins outright so a different account root
+  // never leaks the home account.
   const configFile = process.env.CLAUDE_CONFIG_DIR
     ? path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json')
     : path.join(os.homedir(), '.claude.json');
@@ -202,12 +229,10 @@ process.stdin.on('end', () => {
     const model    = data.model?.display_name || 'Claude';
     const effort   = data.effort?.level ? mutedGray(` [${data.effort.level}]`) : '';
     const dir      = data.workspace?.current_dir || data.cwd || process.cwd();
-    const session  = data.session_id || '';
+    const sessionId = data.session_id || '';
+    const sessionName = data.session_name || '';
     const dirname  = path.basename(dir);
     const cw       = data.context_window || {};
-
-    const homeDir   = os.homedir();
-    const claudeDir = process.env.CLAUDE_CONFIG_DIR || path.join(homeDir, '.claude');
 
     function fmtTokens(n) {
       if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
@@ -259,9 +284,11 @@ process.stdin.on('end', () => {
     // ── Rate limit bars (claude.ai subscription only) ──────────────────────
     let fiveHourPart = '';
     let sevenDayPart = '';
+    let spendLimitPart = '';
 
     const fiveHour  = data.rate_limits?.five_hour;
     const sevenDay  = data.rate_limits?.seven_day;
+    const spendLimit = data.rate_limits?.spend_limit;
 
     if (Number.isFinite(fiveHour?.used_percentage)) {
       const pct = Math.round(fiveHour.used_percentage);
@@ -289,22 +316,8 @@ process.stdin.on('end', () => {
       sevenDayPart = metricBar('7D', pct, 6) + resetStr;
     }
 
-    // ── Current task from todos ────────────────────────────────────────────
-    let task = '';
-    const todosDir = path.join(claudeDir, 'todos');
-    if (session && fs.existsSync(todosDir)) {
-      try {
-        const files = fs.readdirSync(todosDir)
-          .filter(f => f.startsWith(session) && f.includes('-agent-') && f.endsWith('.json'))
-          .map(f => ({ name: f, mtime: fs.statSync(path.join(todosDir, f)).mtime }))
-          .sort((a, b) => b.mtime - a.mtime);
-
-        if (files.length > 0) {
-          const todos = JSON.parse(fs.readFileSync(path.join(todosDir, files[0].name), 'utf8'));
-          const inProgress = todos.find(t => t.status === 'in_progress');
-          if (inProgress) task = inProgress.activeForm || '';
-        }
-      } catch (_) {}
+    if (Number.isFinite(spendLimit?.used_percentage)) {
+      spendLimitPart = metricBar('SPEND', spendLimit.used_percentage, 6);
     }
 
     // ── Git info ───────────────────────────────────────────────────────────
@@ -313,7 +326,7 @@ process.stdin.on('end', () => {
     let gitPart = '';
     const gitCwd = data.cwd || dir;
     const repo   = data.workspace?.repo;
-    const git    = getGitInfo(gitCwd, { skipRemote: !!repo });
+    const git    = getGitInfo(gitCwd, { skipRemote: !!repo, sessionId });
     let remoteLabel = null;
     if (repo && (repo.owner || repo.name)) {
       remoteLabel = [repo.host, repo.owner, repo.name].filter(Boolean).join('/');
@@ -341,12 +354,12 @@ process.stdin.on('end', () => {
     }
 
     // ── Assemble output ────────────────────────────────────────────────────
-    // Line 1: Name · Plan │ ModelName [effort] │ active task │ CTX ████░░░░ nn% · 5H ████░░ nn% ↺HH:MM · 7D ████░░ nn%
+    // Line 1: Name · Plan │ ModelName [effort] │ session name │ CTX ████░░░░ nn% · 5H ████░░ nn% ↺HH:MM · 7D ████░░ nn%
     // Line 2: dirname · remote · GIT branch · ~n · ↑n · ↓n · TOK IN nn.nk / nnnk · OUT nn.nk · $ n.nn · CACHE ████░░ nn%
     //
     // Visual hierarchy:
     //   - Model: soft blue (ambient context)
-    //   - Task: bold amber (most important left-side info when present)
+    //   - Session name: bold amber (most important left-side info when present)
     //   - Dir: bright white (primary navigation anchor)
     //   - Separators: muted gray (structural, low weight)
     //   - Metric labels: bold cyan (scannable right-side anchors)
@@ -368,10 +381,10 @@ process.stdin.on('end', () => {
     const leftParts = [
       acctPart,
       softBlue(model) + effort,
-      task ? bold(yellow(task)) : null,
+      sessionName ? bold(yellow(sessionName)) : null,
     ].filter(Boolean).join(sep);
 
-    const rightParts = [ctxPart, fiveHourPart, sevenDayPart]
+    const rightParts = [ctxPart, fiveHourPart, sevenDayPart, spendLimitPart]
       .filter(Boolean)
       .join(dotSep);
 

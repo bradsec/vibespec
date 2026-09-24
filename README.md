@@ -80,12 +80,12 @@ Set `VIBESPEC_STATE_DIR` to write that file somewhere else. If `python3` is not 
 
 ## Status lines
 
-All statusline scripts live in `statuslines/`.
+Command-backed statusline scripts live in `statuslines/`. Codex uses its built-in footer items.
 
 | Tool | Current behavior |
 |------|------------------|
-| Claude Code | Installs a documented command-backed statusline showing context usage, rate limits, git status, context-window token counts, session cost, model reasoning effort, and cache hit rate. |
-| Codex | Installs the local formatter script and configures supported built-in `tui.status_line` items in `~/.codex/config.toml`. Command-backed custom statuslines are not supported yet. |
+| Claude Code | Installs a documented command-backed statusline under `$CLAUDE_CONFIG_DIR` (default `~/.claude`). It shows context usage, rate limits (including optional gateway spend limits), git status, context-window token counts, session cost, model reasoning effort, and cache hit rate; git details refresh every five seconds. |
+| Codex | Configures supported built-in `tui.status_line` items in `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`). Use `/statusline` in Codex to toggle and reorder footer items. |
 | Antigravity CLI | Installs a command-backed formatter showing context usage, rate limits, git status, token counts, session cost, and cache hit rate. Its host integration is unverified: it assumes the Claude Code statusline JSON schema and degrades to whatever fields the host actually sends. |
 
 The `CACHE` segment shows the prompt-cache hit rate: the share of input tokens served from cache rather than reprocessed. It uses the session-wide `prompt_cache.hit_ratio` when the host reports it (Claude Code 2.1.251+), otherwise a per-turn estimate from the last response's token counts. A high rate (green) means cheaper, faster turns; a low rate (red) means more of the context was reprocessed. It is hidden when the host reports no cache fields or usable cache metrics. An explicit zero cache-read count still displays 0%.

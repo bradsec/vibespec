@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG="${HOME}/.codex/config.toml"
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+CONFIG="$CODEX_HOME/config.toml"
 
 echo "Resetting Codex CLI statusline to default..."
 

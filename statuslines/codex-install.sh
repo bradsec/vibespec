@@ -1,32 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_RAW="https://raw.githubusercontent.com/bradsec/vibespec/main"
-HOOK_DEST="${HOME}/.codex/statusline.js"
-CONFIG="${HOME}/.codex/config.toml"
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+CONFIG="$CODEX_HOME/config.toml"
 
 echo "Installing Codex statusline..."
 echo ""
-echo "Installing the local formatter script and configuring the"
-echo "customizable tui.status_line footer items."
+echo "Configuring Codex's built-in tui.status_line footer items."
 echo ""
-
-mkdir -p "$(dirname "$HOOK_DEST")"
-
-LOCAL_JS="$(dirname "${BASH_SOURCE[0]}")/codex-statusline.js"
-if [[ -f "$LOCAL_JS" ]]; then
-    cp "$LOCAL_JS" "$HOOK_DEST"
-elif command -v curl &>/dev/null; then
-    curl -fsSL "${REPO_RAW}/statuslines/codex-statusline.js" -o "$HOOK_DEST"
-elif command -v wget &>/dev/null; then
-    wget -qO "$HOOK_DEST" "${REPO_RAW}/statuslines/codex-statusline.js"
-else
-    echo "Error: neither curl nor wget found and no local copy available." >&2
-    exit 1
-fi
-
-chmod +x "$HOOK_DEST"
-echo "Installed: $HOOK_DEST"
 
 # Configure enum-based tui.status_line in config.toml
 if ! command -v python3 &>/dev/null; then
