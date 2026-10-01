@@ -437,4 +437,31 @@ test_main_menu_lists_mirror() {
 }
 test_main_menu_lists_mirror
 
+test_rejects_symlinked_target_parents() {
+    local home="$TMPDIR/parent-link-home" src dst outside before
+    src="$home/src claude"
+    dst="$home/dst claude"
+    outside="$home/outside plugins"
+    make_claude_source "$src"
+    make_claude_target "$dst"
+    mkdir -p "$outside/cache/keep"
+    printf 'outside\n' > "$outside/cache/keep/file"
+    ln -s "$outside" "$dst/plugins"
+    before="$(tree_sum "$outside")"
+    if run_mirror "$home" y claude "$src" "$dst" > "$TMPDIR/parent-link.out" 2>&1; then
+        fail "Symlinked target parent was accepted"
+    fi
+    assert_contains "$TMPDIR/parent-link.out" "symlink"
+    [[ "$(tree_sum "$outside")" == "$before" ]] || fail "Mirror changed files outside the target"
+    assert_missing "$dst/.vibespec-mirror-backup"
+
+    rm "$dst/plugins"
+    ln -s "$outside" "$dst/.vibespec-mirror-backup"
+    if run_mirror "$home" y claude "$src" "$dst" > /dev/null 2>&1; then
+        fail "Symlinked snapshot root was accepted"
+    fi
+    [[ "$(tree_sum "$outside")" == "$before" ]] || fail "Snapshot escaped the target"
+}
+test_rejects_symlinked_target_parents
+
 echo "mirror tests passed"

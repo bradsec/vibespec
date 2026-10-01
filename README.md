@@ -126,7 +126,7 @@ Each run moves the target's previous files into `<target>/.vibespec-mirror-backu
 
 MCP servers and `settings.json` `env` entries can hold API keys or tokens. Before confirming, mirror lists the names of MCP servers, their environment variables, `env` keys, and `apiKeyHelper` that it will copy, without their values.
 
-Copied config files (`settings.json`, `config.toml`, the rules file, and the Claude plugin index files) embed absolute paths to the source profile. Mirror rewrites those paths to the target profile. A copied config file that was a symlink becomes a regular file in the target, so the shared file it pointed at stays unchanged. Files under `hooks/`, `skills/`, `agents/`, `commands/`, `rules/`, and the plugin directories are copied unchanged; mirror lists any of them that still reference the source profile. Target paths containing quotes or backslashes are rejected. Codex mirroring requires Python 3.11+.
+Copied config files (`settings.json`, `config.toml`, the rules file, and the Claude plugin index files) embed absolute paths to the source profile. Mirror rewrites those paths to the target profile. A copied config file that was a symlink becomes a regular file in the target, so the shared file it pointed at stays unchanged. Files under `hooks/`, `skills/`, `agents/`, `commands/`, `rules/`, and the plugin directories are copied unchanged; mirror lists any of them that still reference the source profile. Target paths containing quotes or backslashes are rejected, as are targets where `plugins/` or `.vibespec-mirror-backup/` is a symlink, since mirror would then write outside the target. Codex mirroring requires Python 3.11+.
 
 ## Development
 

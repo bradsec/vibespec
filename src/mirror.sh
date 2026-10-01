@@ -126,6 +126,20 @@ mirror_validate() {
         print_message error "Source and target must not contain each other."
         return 1
     fi
+    # mv and cp follow a symlinked parent, which would move or write files
+    # outside the target. Allowlisted paths themselves may be links.
+    local parents=("$MIRROR_SNAPSHOT_ROOT") path
+    for path in "${MIRROR_PATHS[@]}"; do
+        if [[ "$path" == */* ]]; then
+            parents+=("${path%/*}")
+        fi
+    done
+    for path in "${parents[@]}"; do
+        if [[ -L "$target/$path" ]]; then
+            print_message error "Target ${target}/${path} is a symlink; mirror would write outside the target."
+            return 1
+        fi
+    done
     local files=()
     for file in "${MIRROR_REWRITE[@]}"; do
         files+=("$source/$file")
