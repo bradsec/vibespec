@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Tests change HOME and must not inherit an active CLI profile.
+unset CLAUDE_CONFIG_DIR CODEX_HOME
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -66,6 +68,53 @@ EOF
 }
 
 test_codex_rules_update_reports_source_and_hashes
+
+test_custom_profiles() {
+    local home="$TMPDIR/custom-home"
+    local claude="$home/claude profile"
+    local codex="$home/codex profile"
+    mkdir -p "$home"
+    HOME="$home" CLAUDE_CONFIG_DIR="$home/env-claude" CODEX_HOME="$home/env-codex" \
+        PATH="$TMPDIR/bin:$PATH" bash -c '
+            source "'"$ROOT"'/src/config.sh"
+            install_config "Claude Code"
+            install_config "Codex"
+        ' > /dev/null
+    assert_contains "$home/env-claude/CLAUDE.md" "updated rules"
+    assert_contains "$home/env-codex/AGENTS.md" "updated rules"
+
+    printf '%s\n' "$claude" | HOME="$home" PATH="$TMPDIR/bin:$PATH" bash -c '
+        source "'"$ROOT"'/src/config.sh"
+        install_custom_config "Claude Code"
+    ' > /dev/null
+    printf '%s\n' "$codex" | HOME="$home" PATH="$TMPDIR/bin:$PATH" bash -c '
+        source "'"$ROOT"'/src/config.sh"
+        install_custom_config "Codex"
+    ' > /dev/null
+    assert_contains "$claude/CLAUDE.md" "updated rules"
+    assert_contains "$codex/AGENTS.md" "updated rules"
+    assert_contains "$home/.config/vibespec/installs.json" "$claude/CLAUDE.md"
+    assert_contains "$home/.config/vibespec/installs.json" "$codex/AGENTS.md"
+
+    # Send a literal tilde to exercise the profile prompt's expansion.
+    # shellcheck disable=SC2088
+    printf '~/alternate\n' | HOME="$home" PATH="$TMPDIR/bin:$PATH" bash -c '
+        source "'"$ROOT"'/src/config.sh"
+        install_custom_config "Codex"
+    ' > /dev/null
+    assert_contains "$home/alternate/AGENTS.md" "updated rules"
+
+    if printf 'relative/path\n' | HOME="$home" PATH="$TMPDIR/bin:$PATH" bash -c '
+        source "'"$ROOT"'/src/config.sh"
+        install_custom_config "Codex"
+    ' > /dev/null 2>&1; then
+        echo "Relative profile path was accepted" >&2
+        exit 1
+    fi
+    test ! -e "$home/.codex/AGENTS.md"
+}
+
+test_custom_profiles
 
 test_codex_rules_preserve_same_day_backups() {
     local test_home="$TMPDIR/codex-home"

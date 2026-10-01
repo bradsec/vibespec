@@ -21,8 +21,8 @@ sha256_file() {
 
 # Tool name → destination path
 declare -A TOOL_PATHS
-TOOL_PATHS["Claude Code"]="$HOME/.claude/CLAUDE.md"
-TOOL_PATHS["Codex"]="$HOME/.codex/AGENTS.md"
+TOOL_PATHS["Claude Code"]="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/CLAUDE.md"
+TOOL_PATHS["Codex"]="${CODEX_HOME:-$HOME/.codex}/AGENTS.md"
 TOOL_PATHS["Antigravity CLI"]="$HOME/.gemini/AGENTS.md"
 
 # Tool name → restart instructions shown after install
@@ -33,7 +33,19 @@ TOOL_RESTART["Antigravity CLI"]="Restart Antigravity CLI to load the new rules."
 
 install_config() {
     local tool="$1"
+    if [[ -z "${TOOL_PATHS[$tool]:-}" ]]; then
+        print_message error "Unknown tool: ${tool}"
+        return 1
+    fi
     local dest="${TOOL_PATHS[$tool]}"
+    if [[ -n "${2:-}" ]]; then
+        dest="${2%/}/$(basename "$dest")"
+    fi
+    local install_id
+    install_id="config:$(slugify "$tool")"
+    if [[ "$dest" != "${TOOL_PATHS[$tool]}" ]]; then
+        install_id+=":${dest}"
+    fi
     local filename
     filename="$(basename "$dest")"
     print_message header "Configuring ${tool}"
@@ -78,7 +90,7 @@ install_config() {
     if [[ -f "$dest" ]] && cmp -s "$new_file" "$dest"; then
         rm -f "$new_file"
         print_message success "Rules already up to date: ${dest}"
-        record_install "config:$(slugify "$tool")" "config" "RULES.md" "$dest"
+        record_install "$install_id" "config" "RULES.md" "$dest"
         if [[ -n "${TOOL_RESTART[$tool]:-}" ]]; then
             print_message info "${TOOL_RESTART[$tool]}"
         fi
@@ -100,19 +112,27 @@ install_config() {
     fi
     mv "$new_file" "$dest"
     print_message success "Rules installed: ${dest}"
-    record_install "config:$(slugify "$tool")" "config" "RULES.md" "$dest"
+    record_install "$install_id" "config" "RULES.md" "$dest"
     if [[ -n "${TOOL_RESTART[$tool]:-}" ]]; then
         print_message info "${TOOL_RESTART[$tool]}"
     fi
 }
 
+install_custom_config() {
+    local tool="$1"
+    prompt_profile_dir "$tool" || return 1
+    install_config "$tool" "$PROFILE_DIR"
+}
+
 main() {
     while true; do
         menu_select "Configure AI Coding Rules" \
-            "Configure Claude Code  (~/.claude/CLAUDE.md)" \
-            "Configure Codex        (~/.codex/AGENTS.md)" \
+            "Configure Claude Code  (${TOOL_PATHS["Claude Code"]})" \
+            "Configure Codex        (${TOOL_PATHS["Codex"]})" \
             "Configure Antigravity  (~/.gemini/AGENTS.md)" \
             "Configure all tools" \
+            "Configure Claude Code in custom profile" \
+            "Configure Codex in custom profile" \
             "Back"
         case "$MENU_CHOICE" in
             1) run_install install_config "Claude Code" ;;
@@ -123,7 +143,9 @@ main() {
                 run_install install_config "Codex"
                 run_install install_config "Antigravity CLI"
                 ;;
-            5) return ;;
+            5) run_install install_custom_config "Claude Code" ;;
+            6) run_install install_custom_config "Codex" ;;
+            7) return ;;
         esac
     done
 }

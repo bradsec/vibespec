@@ -376,6 +376,38 @@ for action in ("install", "reset"):
 PYTEST
 }
 
+test_custom_profile_menu_actions() {
+    local home="$TMPDIR/menu-home"
+    local claude="$home/claude profile"
+    local codex="$home/codex profile"
+    mkdir -p "$home"
+    printf '%s\n' "$claude" | HOME="$home" bash -c '
+        source "'"$ROOT"'/src/statusline.sh"
+        run_custom_statusline_script "cc-install.sh" "Claude Code"
+    ' > /dev/null
+    printf '%s\n' "$codex" | HOME="$home" bash -c '
+        source "'"$ROOT"'/src/statusline.sh"
+        run_custom_statusline_script "codex-install.sh" "Codex"
+    ' > /dev/null
+
+    assert_contains "$claude/settings.json" "$claude/hooks/cc-statusline.js"
+    assert_contains "$codex/config.toml" 'status_line = ['
+    assert_contains "$home/.config/vibespec/installs.json" "$claude/settings.json"
+    assert_contains "$home/.config/vibespec/installs.json" "$codex/config.toml"
+    test ! -e "$home/.claude/settings.json"
+    test ! -e "$home/.codex/config.toml"
+
+    HOME="$home" PROFILE_CLAUDE="$claude" PROFILE_CODEX="$codex" bash -c '
+        source "'"$ROOT"'/src/statusline.sh"
+        run_statusline_script "cc-reset.sh" "$PROFILE_CLAUDE"
+        run_statusline_script "codex-reset.sh" "$PROFILE_CODEX"
+    ' > /dev/null
+    assert_not_contains "$claude/settings.json" '"statusLine"'
+    assert_not_contains "$codex/config.toml" 'status_line = ['
+}
+
+test_custom_profile_menu_actions
+
 test_codex_multiline_toml
 test_cc_install_backs_up_and_reset_restores
 test_cc_install_keeps_symlinked_settings

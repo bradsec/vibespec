@@ -51,6 +51,30 @@ slugify() {
         | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
 }
 
+# Read a profile directory for a menu action. Keep the result in PROFILE_DIR
+# because command substitution would put the prompt in a subshell.
+prompt_profile_dir() {
+    local tool="$1" input
+    if [[ -t 0 ]]; then
+        printf '%s profile directory (absolute path or ~/...): ' "$tool" > /dev/tty
+        IFS= read -r input < /dev/tty || return 1
+    else
+        printf '%s profile directory (absolute path or ~/...): ' "$tool" >&2
+        IFS= read -r input || return 1
+    fi
+    case "$input" in
+        [~]/*) input="$HOME/${input:2}" ;;
+        /*) ;;
+        *) print_message error "Enter an absolute profile directory or a path starting with ~/"
+           return 1 ;;
+    esac
+    if [[ "$input" == / || "$input" == *[$'\n\r\t']* ]]; then
+        print_message error "Invalid profile directory: ${input}"
+        return 1
+    fi
+    PROFILE_DIR="${input%/}"
+}
+
 vibespec_state_file() {
     local state_dir="${VIBESPEC_STATE_DIR:-$HOME/.config/vibespec}"
     printf '%s/installs.json\n' "$state_dir"

@@ -27,8 +27,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/bradsec/vibespec/main/vibesp
 | Menu option | What it installs |
 |-------------|-----------------|
 | Install AI Coding CLI Tools | nvm, Claude Code, Codex, Antigravity CLI, plus verify, replace, and full-removal actions |
-| Configure AI Coding Rules | Deploys `RULES.md` to each tool's config path with the correct filename header |
-| Install Status Lines | Installs or resets statusline configuration for Claude Code, Codex, and Antigravity CLI |
+| Configure AI Coding Rules | Deploys `RULES.md` to each tool's config path with the correct filename header; Claude Code and Codex also accept custom profile directories |
+| Install Status Lines | Installs or resets statusline configuration for Claude Code, Codex, and Antigravity CLI; Claude Code and Codex also accept custom profile directories |
 
 The menu uses local scripts when the repo is cloned. When run directly from GitHub, it fetches helper scripts from the `main` branch as needed.
 
@@ -49,6 +49,8 @@ Cross-tool config paths:
 | Claude Code | `~/.claude/CLAUDE.md` |
 | Codex | `~/.codex/AGENTS.md` |
 | Antigravity CLI | `~/.gemini/AGENTS.md` |
+
+For additional Claude Code or Codex profiles, choose the custom profile option in the rules menu and enter the profile **directory** (an absolute path or `~/...`). Vibespec writes `CLAUDE.md` or `AGENTS.md` inside it. Standard rule installs also honor `$CLAUDE_CONFIG_DIR` and `$CODEX_HOME` when set. Custom installs leave other profiles alone and keep separate install-state entries.
 
 ## Requirements
 
@@ -99,6 +101,8 @@ Existing malformed or non-object JSON settings cause installation and reset to s
 Installs replace `settings.json` and `config.toml` in one step (a temp file, then a rename) and write through a symlink to its target, so dotfile-managed configs stay symlinks. The Claude Code installer renders the statusline once with a sample payload and warns if that fails, and warns when the current directory's `.claude/settings.json` or `settings.local.json` sets its own `statusLine`, which takes precedence in that project.
 
 The statusline menu also includes reset actions to restore each tool's original statusline behavior. The first Claude Code or Codex install keeps any statusline setting you had before in `$CLAUDE_CONFIG_DIR/statusline.vibespec-backup.json` or `$CODEX_HOME/status_line.vibespec-backup.json`; reset puts it back and deletes the backup, and without a backup it removes the setting so the tool uses its default. Resets leave unrelated config keys intact.
+
+To install or reset a statusline in an additional Claude Code or Codex profile, choose its custom profile option and enter the same profile directory used for the rules. The statusline script and settings or config file stay in that directory. To use the profile, launch the corresponding CLI with `CLAUDE_CONFIG_DIR` or `CODEX_HOME` set to that directory.
 
 ## Development
 
