@@ -266,4 +266,61 @@ test_claude_global_config_location() {
 test_claude_global_config_location
 
 
+test_claude_mcp_key_only() {
+    local home="$TMPDIR/mcp-home" src dst
+    src="$home/src claude"
+    dst="$home/dst claude"
+    make_claude_source "$src"
+    make_claude_target "$dst"
+    run_mirror "$home" y claude "$src" "$dst" > /dev/null
+
+    assert_contains "$dst/.claude.json" '"docs"'
+    assert_not_contains "$dst/.claude.json" '"old"'
+    assert_contains "$dst/.claude.json" "dst@example.com"
+    assert_contains "$dst/.claude.json" "dst-user"
+    assert_not_contains "$dst/.claude.json" "src-user"
+    assert_contains "$dst/.vibespec-mirror-backup/$(date +%d%m%Y)/global-config/.claude.json" '"old"'
+
+    python3 - "$src/.claude.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path, encoding="utf-8"))
+del data["mcpServers"]
+json.dump(data, open(path, "w", encoding="utf-8"))
+PY
+    run_mirror "$home" y claude "$src" "$dst" > /dev/null
+    assert_not_contains "$dst/.claude.json" "mcpServers"
+    assert_contains "$dst/.claude.json" "dst-user"
+}
+test_claude_mcp_key_only
+
+test_claude_mcp_creates_missing_target_config() {
+    local home="$TMPDIR/mcp-new-home" src dst
+    src="$home/src claude"
+    dst="$home/dst claude"
+    make_claude_source "$src"
+    mkdir -p "$dst"
+    run_mirror "$home" y claude "$src" "$dst" > /dev/null
+    assert_contains "$dst/.claude.json" '"docs"'
+    assert_not_contains "$dst/.claude.json" "src-user"
+}
+test_claude_mcp_creates_missing_target_config
+
+test_secrets_warning_lists_names_only() {
+    local home="$TMPDIR/secrets-home" src dst
+    src="$home/src claude"
+    dst="$home/dst claude"
+    make_claude_source "$src"
+    make_claude_target "$dst"
+    run_mirror "$home" n claude "$src" "$dst" > "$TMPDIR/secrets.out" 2>&1
+    assert_contains "$TMPDIR/secrets.out" "These may carry API keys or tokens"
+    assert_contains "$TMPDIR/secrets.out" "settings env: API_TOKEN"
+    assert_contains "$TMPDIR/secrets.out" "MCP server: docs"
+    assert_contains "$TMPDIR/secrets.out" "MCP server docs env: DOCS_KEY"
+    assert_contains "$TMPDIR/secrets.out" "update   mcpServers"
+    assert_not_contains "$TMPDIR/secrets.out" "sk-settings-secret"
+    assert_not_contains "$TMPDIR/secrets.out" "mcp-secret-value"
+}
+test_secrets_warning_lists_names_only
+
 echo "mirror tests passed"

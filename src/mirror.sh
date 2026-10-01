@@ -187,12 +187,139 @@ mirror_copy_paths() {
     done
 }
 
+mirror_claude_mcp() {
+    local source_config="$1" target_config="$2" snapshot="$3"
+    if [[ -e "$target_config" ]]; then
+        mkdir -p "$snapshot/global-config" || return 1
+        cp "$target_config" "$snapshot/global-config/.claude.json" || return 1
+    fi
+    python3 - "$source_config" "$target_config" <<'PY'
+import json
+import os
+import sys
+import tempfile
+
+source_path, target_path = sys.argv[1], sys.argv[2]
+
+
+def load(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except FileNotFoundError:
+        return None
+
+
+source = load(source_path) or {}
+target = load(target_path)
+if target is None:
+    if "mcpServers" not in source:
+        sys.exit(0)
+    target = {}
+
+if "mcpServers" in source:
+    target["mcpServers"] = source["mcpServers"]
+else:
+    target.pop("mcpServers", None)
+
+# Write through a symlink to its target so dotfile-managed configs stay links.
+real = os.path.realpath(target_path)
+directory = os.path.dirname(real)
+os.makedirs(directory, exist_ok=True)
+fd, tmp = tempfile.mkstemp(dir=directory, prefix=".claude.json.")
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(target, fh, indent=2)
+        fh.write("\n")
+    if os.path.exists(real):
+        os.chmod(tmp, os.stat(real).st_mode & 0o7777)
+    os.replace(tmp, real)
+except BaseException:
+    if os.path.exists(tmp):
+        os.unlink(tmp)
+    raise
+PY
+}
+
+mirror_secrets_warning() {
+    local tool="$1" source="$2" names line
+    if [[ "$tool" == claude ]]; then
+        names="$(python3 - "$source/settings.json" "$(claude_global_config "$source")" <<'PY'
+import json
+import sys
+
+
+def load(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+settings, config = load(sys.argv[1]), load(sys.argv[2])
+env = settings.get("env")
+for key in sorted(env if isinstance(env, dict) else {}):
+    print(f"settings env: {key}")
+if "apiKeyHelper" in settings:
+    print("settings: apiKeyHelper")
+servers = config.get("mcpServers")
+servers = servers if isinstance(servers, dict) else {}
+for name in sorted(servers):
+    print(f"MCP server: {name}")
+    server = servers[name] if isinstance(servers[name], dict) else {}
+    server_env = server.get("env")
+    for key in sorted(server_env if isinstance(server_env, dict) else {}):
+        print(f"MCP server {name} env: {key}")
+PY
+)" || return 1
+    else
+        names="$(python3 - "$source/config.toml" <<'PY'
+import sys
+import tomllib
+
+try:
+    with open(sys.argv[1], "rb") as fh:
+        config = tomllib.load(fh)
+except FileNotFoundError:
+    config = {}
+servers = config.get("mcp_servers")
+servers = servers if isinstance(servers, dict) else {}
+for name in sorted(servers):
+    print(f"MCP server: {name}")
+    server = servers[name] if isinstance(servers[name], dict) else {}
+    for field in ("env", "env_vars"):
+        value = server.get(field)
+        if isinstance(value, (dict, list)):
+            for key in sorted(str(item) for item in value):
+                print(f"MCP server {name} {field}: {key}")
+PY
+)" || return 1
+    fi
+    [[ -n "$names" ]] || return 0
+    print_message warning "These may carry API keys or tokens into the target account:"
+    while IFS= read -r line; do
+        printf '  %s\n' "$line"
+    done <<< "$names"
+}
+
 mirror_apply() {
-    local tool="$1" source="$2" target="$3" snapshot="$4" file
+    local tool="$1" source="$2" target="$3" snapshot="$4" file source_config="" target_config=""
+    if [[ "$tool" == claude ]]; then
+        source_config="$(claude_global_config "$source")"
+        target_config="$(claude_global_config "$target")"
+    fi
     mirror_copy_paths "$source" "$target" "$snapshot" || return 1
+    if [[ "$tool" == claude ]]; then
+        mirror_claude_mcp "$source_config" "$target_config" "$snapshot" || return 1
+    fi
     for file in "${MIRROR_REWRITE[@]}"; do
         mirror_check_parse "$target/$file" || return 1
     done
+    if [[ -n "$target_config" ]]; then
+        mirror_check_parse "$target_config" || return 1
+    fi
 }
 
 # Mirror one profile directory onto another. tool: claude or codex.
@@ -201,6 +328,10 @@ mirror_profile() {
     mirror_select_tool "$tool" || return 1
     mirror_validate "$tool" "$source" "$target" || return 1
     mirror_plan "$source" "$target"
+    if [[ "$tool" == claude ]]; then
+        printf '  %-8s %s\n' "update" "mcpServers in $(claude_global_config "$target")"
+    fi
+    mirror_secrets_warning "$tool" "$source" || return 1
     print_message info "Close sessions that use the target profile before continuing."
     if ! confirm "Mirror ${source} onto ${target}?"; then
         print_message info "Mirror cancelled; nothing changed."
