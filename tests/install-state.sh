@@ -268,7 +268,9 @@ test_removed_installers_are_not_referenced() {
 test_script_code_contains_no_plugin_or_mcp_references() {
     local output
 
-    if output="$(grep -RInE 'plugin|plugins|mcp|MCP|extension|extensions' "$ROOT/vibespec.sh" "$ROOT/src" 2>/dev/null)"; then
+    # mirror.sh copies existing plugin and MCP config between profiles; it
+    # installs neither, so the removed-installer guard does not apply to it.
+    if output="$(grep -RInE --exclude=mirror.sh 'plugin|plugins|mcp|MCP|extension|extensions' "$ROOT/vibespec.sh" "$ROOT/src" 2>/dev/null)"; then
         echo "Script code still contains plugin/MCP references:" >&2
         echo "$output" >&2
         exit 1

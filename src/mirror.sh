@@ -411,3 +411,29 @@ mirror_profile() {
     print_message info "Previous target files: ${snapshot}"
     print_message info "To restore, move the snapshot contents back into ${target}."
 }
+
+mirror_menu_profile() {
+    local tool="$1" label="$2" source
+    prompt_profile_dir "Source ${label}" || return 1
+    source="$PROFILE_DIR"
+    prompt_profile_dir "Target ${label}" || return 1
+    mirror_profile "$tool" "$source" "$PROFILE_DIR"
+}
+
+main() {
+    while true; do
+        menu_select "Mirror Profiles" \
+            "Mirror Claude Code profile" \
+            "Mirror Codex profile" \
+            "Back"
+        case "$MENU_CHOICE" in
+            1) run_install mirror_menu_profile claude "Claude Code" ;;
+            2) run_install mirror_menu_profile codex "Codex" ;;
+            3) return ;;
+        esac
+    done
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main
+fi

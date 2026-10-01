@@ -415,4 +415,26 @@ EOF
 }
 test_codex_mirror
 
+test_interactive_prompts_accept_home_paths() {
+    local home="$TMPDIR/prompt-home"
+    make_claude_source "$home/src claude"
+    make_claude_target "$home/dst claude"
+    # shellcheck disable=SC2088
+    printf '~/src claude\n~/dst claude\n' | HOME="$home" bash -c '
+        source "$1"
+        confirm() { return 0; }
+        mirror_menu_profile claude "Claude Code"
+    ' x "$ROOT/src/mirror.sh" > "$TMPDIR/prompt.out" 2>&1
+    assert_contains "$TMPDIR/prompt.out" "Source Claude Code profile directory"
+    assert_contains "$TMPDIR/prompt.out" "Target Claude Code profile directory"
+    assert_contains "$home/dst claude/CLAUDE.md" "source rules"
+}
+test_interactive_prompts_accept_home_paths
+
+test_main_menu_lists_mirror() {
+    grep -Fq '"Mirror Profiles"' "$ROOT/vibespec.sh" || fail "vibespec.sh has no Mirror Profiles entry"
+    grep -Fq 'run_script "mirror.sh"' "$ROOT/vibespec.sh" || fail "vibespec.sh does not run mirror.sh"
+}
+test_main_menu_lists_mirror
+
 echo "mirror tests passed"

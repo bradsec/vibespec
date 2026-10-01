@@ -29,6 +29,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/bradsec/vibespec/main/vibesp
 | Install AI Coding CLI Tools | nvm, Claude Code, Codex, Antigravity CLI, plus verify, replace, and full-removal actions |
 | Configure AI Coding Rules | Deploys `RULES.md` to each tool's config path with the correct filename header; Claude Code and Codex also accept custom profile directories |
 | Install Status Lines | Installs or resets statusline configuration for Claude Code, Codex, and Antigravity CLI; Claude Code and Codex also accept custom profile directories |
+| Mirror Profiles | Copies rules, statusline, plugins, skills, agents, commands, hooks, MCP servers, and permissions from one Claude Code or Codex profile directory to another, without credentials or session data |
 
 The menu uses local scripts when the repo is cloned. When run directly from GitHub, it fetches helper scripts from the `main` branch as needed.
 
@@ -104,6 +105,29 @@ The statusline menu also includes reset actions to restore each tool's original 
 
 To install or reset a statusline in an additional Claude Code or Codex profile, choose its custom profile option and enter the same profile directory used for the rules. The statusline script and settings or config file stay in that directory. To use the profile, launch the corresponding CLI with `CLAUDE_CONFIG_DIR` or `CODEX_HOME` set to that directory.
 
+## Mirroring profiles
+
+`Mirror Profiles` makes a second Claude Code or Codex profile run the same setup as an existing one, for example a personal and a work account on the same machine. Enter the source and target profile directories (absolute paths or `~/...`). Mirroring works between profiles of the same tool only.
+
+Mirror copies a fixed list of paths and nothing else:
+
+| Tool | Copied |
+|------|--------|
+| Claude Code | `CLAUDE.md`, `settings.json`, `hooks/`, `skills/`, `agents/`, `commands/`, `plugins/installed_plugins.json`, `plugins/known_marketplaces.json`, `plugins/cache/`, `plugins/marketplaces/`, and the `mcpServers` key of `.claude.json` |
+| Codex | `AGENTS.md`, `config.toml`, `rules/`, `skills/`, `plugins/cache/` |
+
+Credentials (`.credentials.json`, `auth.json`), sign-in and account state in `.claude.json`, history, sessions, projects, plugin data, and statusline backups are never copied. Files a future CLI version adds are not copied either, because mirror uses a fixed list.
+
+The target ends up identical to the source for each listed path: items that exist only in the target, such as an extra skill or hook, are removed. Before changing anything, mirror prints a plan (`replace`, `create`, `remove`, or `skip` per path) and asks for confirmation. Close sessions that use the target profile first.
+
+For `.claude.json`, mirror uses the file inside the profile directory when it exists (Claude Code writes it there when launched with `CLAUDE_CONFIG_DIR`), otherwise `~/.claude.json` for the default `~/.claude` profile.
+
+Each run moves the target's previous files into `<target>/.vibespec-mirror-backup/<DDMMYYYY>/` (numbered `.1`, `.2` for later runs the same day), and copies the previous `.claude.json` to `global-config/.claude.json` there. To undo a mirror, move the snapshot contents back into the target. If a step fails, mirror stops, reports that the target is partial, and prints the snapshot path.
+
+MCP servers and `settings.json` `env` entries can hold API keys or tokens. Before confirming, mirror lists the names of MCP servers, their environment variables, `env` keys, and `apiKeyHelper` that it will copy, without their values.
+
+Copied config files (`settings.json`, `config.toml`, the rules file, and the Claude plugin index files) embed absolute paths to the source profile. Mirror rewrites those paths to the target profile. A copied config file that was a symlink becomes a regular file in the target, so the shared file it pointed at stays unchanged. Files under `hooks/`, `skills/`, `agents/`, `commands/`, `rules/`, and the plugin directories are copied unchanged; mirror lists any of them that still reference the source profile. Target paths containing quotes or backslashes are rejected. Codex mirroring requires Python 3.11+.
+
 ## Development
 
 Run the test suite:
@@ -113,6 +137,7 @@ bash tests/config-rules.sh
 bash tests/install-state.sh
 bash tests/statusline-installers.sh
 bash tests/statusline-scripts.sh
+bash tests/mirror.sh
 ```
 
 Lint the shell scripts:

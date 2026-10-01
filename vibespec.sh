@@ -40,12 +40,14 @@ main() {
             "Install AI Coding CLI Tools" \
             "Configure AI Coding Rules" \
             "Install Status Lines" \
+            "Mirror Profiles" \
             "Exit"
         case "$MENU_CHOICE" in
             1) run_script "tools.sh" ;;
             2) run_script "config.sh" ;;
             3) run_script "statusline.sh" ;;
-            4) echo; print_message info "Done."; exit 0 ;;
+            4) run_script "mirror.sh" ;;
+            5) echo; print_message info "Done."; exit 0 ;;
         esac
     done
 }
