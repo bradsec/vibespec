@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=src/lib.sh
+source "${SCRIPT_DIR}/lib.sh" 2>/dev/null || \
+    source <(curl -fsSL "https://raw.githubusercontent.com/bradsec/vibespec/main/src/lib.sh")
+
+# Paths mirrored per tool, relative to the profile directory. An allowlist, so
+# files a CLI adds later (credentials, caches, state) are never copied.
+MIRROR_CLAUDE_PATHS=(
+    CLAUDE.md settings.json hooks skills agents commands
+    plugins/installed_plugins.json plugins/known_marketplaces.json
+    plugins/cache plugins/marketplaces
+)
+MIRROR_CODEX_PATHS=(AGENTS.md config.toml rules skills plugins/cache)
+
+# Copied config files whose embedded source-profile paths point at the target.
+MIRROR_CLAUDE_REWRITE=(CLAUDE.md settings.json plugins/installed_plugins.json plugins/known_marketplaces.json)
+MIRROR_CODEX_REWRITE=(AGENTS.md config.toml)
+
+# Copied directories kept byte-identical; mirror only reports source paths in them.
+MIRROR_CLAUDE_SCAN=(hooks skills agents commands plugins/cache plugins/marketplaces)
+MIRROR_CODEX_SCAN=(rules skills plugins/cache)
+
+MIRROR_SNAPSHOT_ROOT=".vibespec-mirror-backup"
+
+mirror_select_tool() {
+    case "$1" in
+        claude)
+            MIRROR_PATHS=("${MIRROR_CLAUDE_PATHS[@]}")
+            MIRROR_REWRITE=("${MIRROR_CLAUDE_REWRITE[@]}")
+            MIRROR_SCAN=("${MIRROR_CLAUDE_SCAN[@]}")
+            MIRROR_MARKERS=(settings.json CLAUDE.md)
+            MIRROR_DEFAULT_NAME=".claude"
+            ;;
+        codex)
+            MIRROR_PATHS=("${MIRROR_CODEX_PATHS[@]}")
+            MIRROR_REWRITE=("${MIRROR_CODEX_REWRITE[@]}")
+            MIRROR_SCAN=("${MIRROR_CODEX_SCAN[@]}")
+            MIRROR_MARKERS=(config.toml AGENTS.md)
+            MIRROR_DEFAULT_NAME=".codex"
+            ;;
+        *)
+            print_message error "Unknown tool: $1 (expected claude or codex)"
+            return 1
+            ;;
+    esac
+}
+
+# Claude Code keeps MCP servers and account state in .claude.json: inside the
+# profile when launched with CLAUDE_CONFIG_DIR, else in $HOME for ~/.claude.
+claude_global_config() {
+    local profile="$1"
+    if [[ -e "$profile/.claude.json" ]]; then
+        printf '%s\n' "$profile/.claude.json"
+    elif [[ "$(realpath -m "$profile")" == "$(realpath -m "$HOME/.claude")" ]]; then
+        printf '%s\n' "$HOME/.claude.json"
+    else
+        printf '%s\n' "$profile/.claude.json"
+    fi
+}
+
+mirror_check_parse() {
+    local file="$1"
+    case "$file" in
+        *.json|*.toml) ;;
+        *) return 0 ;;
+    esac
+    [[ -e "$file" ]] || return 0
+    python3 - "$file" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    if path.endswith(".toml"):
+        import tomllib
+        with open(path, "rb") as fh:
+            tomllib.load(fh)
+    else:
+        with open(path, encoding="utf-8") as fh:
+            if not isinstance(json.load(fh), dict):
+                raise ValueError("not a JSON object")
+except Exception as exc:
+    print(f"{path}: {exc}", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+mirror_validate() {
+    local tool="$1" source="$2" target="$3" marker found="" file src_real dst_real
+    if ! command_exists python3; then
+        print_message error "python3 is required to mirror profiles."
+        return 1
+    fi
+    if [[ "$tool" == codex ]] && ! python3 -c 'import tomllib' 2>/dev/null; then
+        print_message error "Python 3.11+ is required to mirror Codex profiles."
+        return 1
+    fi
+    if [[ ! -d "$source" ]]; then
+        print_message error "Source profile does not exist: ${source}"
+        return 1
+    fi
+    for marker in "${MIRROR_MARKERS[@]}"; do
+        if [[ -e "$source/$marker" ]]; then
+            found=1
+        fi
+    done
+    if [[ -z "$found" ]]; then
+        print_message error "Source has no ${MIRROR_MARKERS[*]}; not a ${tool} profile: ${source}"
+        return 1
+    fi
+    # Rewritten config files embed the target path in JSON and TOML strings.
+    if [[ "$target" == *[\"\'\\]* ]]; then
+        print_message error "Target path must not contain quotes or backslashes: ${target}"
+        return 1
+    fi
+    src_real="$(realpath -m "$source")"
+    dst_real="$(realpath -m "$target")"
+    if [[ "$src_real" == "$dst_real" ]]; then
+        print_message error "Source and target are the same directory: ${src_real}"
+        return 1
+    fi
+    if [[ "$dst_real/" == "$src_real/"* || "$src_real/" == "$dst_real/"* ]]; then
+        print_message error "Source and target must not contain each other."
+        return 1
+    fi
+    local files=()
+    for file in "${MIRROR_REWRITE[@]}"; do
+        files+=("$source/$file")
+    done
+    if [[ "$tool" == claude ]]; then
+        files+=("$(claude_global_config "$source")" "$(claude_global_config "$target")")
+    fi
+    for file in "${files[@]}"; do
+        if ! mirror_check_parse "$file"; then
+            print_message error "Cannot parse ${file}; fix it and run mirror again."
+            return 1
+        fi
+    done
+}
+
+mirror_plan() {
+    local source="$1" target="$2" path action
+    print_message header "Mirror plan: ${source} -> ${target}"
+    for path in "${MIRROR_PATHS[@]}"; do
+        if [[ -e "$source/$path" || -L "$source/$path" ]]; then
+            if [[ -e "$target/$path" || -L "$target/$path" ]]; then
+                action="replace"
+            else
+                action="create"
+            fi
+        elif [[ -e "$target/$path" || -L "$target/$path" ]]; then
+            action="remove"
+        else
+            action="skip"
+        fi
+        printf '  %-8s %s\n' "$action" "$path"
+    done
+}
+
+mirror_snapshot_dir() {
+    local target="$1" base dir n=1
+    base="$target/$MIRROR_SNAPSHOT_ROOT/$(date +%d%m%Y)"
+    dir="$base"
+    while [[ -e "$dir" ]]; do
+        dir="${base}.${n}"
+        n=$((n + 1))
+    done
+    printf '%s\n' "$dir"
+}
+
+# Callers test these functions with `||`, which disables errexit inside them,
+# so every step checks its own status.
+mirror_copy_paths() {
+    local source="$1" target="$2" snapshot="$3" path
+    for path in "${MIRROR_PATHS[@]}"; do
+        if [[ -e "$target/$path" || -L "$target/$path" ]]; then
+            mkdir -p "$(dirname "$snapshot/$path")" || return 1
+            mv "$target/$path" "$snapshot/$path" || return 1
+        fi
+        if [[ -e "$source/$path" || -L "$source/$path" ]]; then
+            mkdir -p "$(dirname "$target/$path")" || return 1
+            cp -a "$source/$path" "$target/$path" || return 1
+        fi
+    done
+}
+
+mirror_apply() {
+    local tool="$1" source="$2" target="$3" snapshot="$4" file
+    mirror_copy_paths "$source" "$target" "$snapshot" || return 1
+    for file in "${MIRROR_REWRITE[@]}"; do
+        mirror_check_parse "$target/$file" || return 1
+    done
+}
+
+# Mirror one profile directory onto another. tool: claude or codex.
+mirror_profile() {
+    local tool="$1" source="${2%/}" target="${3%/}" snapshot
+    mirror_select_tool "$tool" || return 1
+    mirror_validate "$tool" "$source" "$target" || return 1
+    mirror_plan "$source" "$target"
+    print_message info "Close sessions that use the target profile before continuing."
+    if ! confirm "Mirror ${source} onto ${target}?"; then
+        print_message info "Mirror cancelled; nothing changed."
+        return 0
+    fi
+    snapshot="$(mirror_snapshot_dir "$target")"
+    mkdir -p "$snapshot"
+    if ! mirror_apply "$tool" "$source" "$target" "$snapshot"; then
+        print_message error "Mirror failed; the target is partial. Previous files: ${snapshot}"
+        return 1
+    fi
+    record_install "mirror:${tool}:$(slugify "$target")" "mirror" "$source" "$target" "$snapshot"
+    print_message success "Mirrored ${source} onto ${target}"
+    print_message info "Previous target files: ${snapshot}"
+    print_message info "To restore, move the snapshot contents back into ${target}."
+}
