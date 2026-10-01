@@ -323,4 +323,96 @@ test_secrets_warning_lists_names_only() {
 }
 test_secrets_warning_lists_names_only
 
+test_claude_rewrites_profile_paths() {
+    local home="$TMPDIR/rewrite-home" src dst
+    src="$home/src claude"
+    dst="$home/dst claude"
+    make_claude_source "$src"
+    make_claude_target "$dst"
+    run_mirror "$home" y claude "$src" "$dst" > "$TMPDIR/rewrite.out" 2>&1
+
+    assert_contains "$dst/settings.json" "node $dst/hooks/cc-statusline.js"
+    assert_contains "$dst/plugins/installed_plugins.json" "$dst/plugins/cache/mk/p1"
+    assert_contains "$dst/plugins/known_marketplaces.json" "$dst/plugins/marketplaces/mk"
+    assert_not_contains "$dst/plugins/installed_plugins.json" "$src/"
+    # Boundary: "<src>-work" is a different directory and stays unchanged.
+    assert_contains "$dst/settings.json" "$src-work/keep"
+    # Skills stay byte-identical and are reported instead.
+    assert_contains "$dst/skills/alpha/SKILL.md" "see $src/skills/alpha"
+    assert_contains "$TMPDIR/rewrite.out" "skills/alpha/SKILL.md"
+}
+test_claude_rewrites_profile_paths
+
+test_default_profile_rewrites_home_forms() {
+    local home="$TMPDIR/default-home" dst
+    dst="$home/work claude"
+    mkdir -p "$home/.claude"
+    # shellcheck disable=SC2016
+    printf '{"hooks": {"a": "~/.claude/hooks/a.sh", "b": "$HOME/.claude/hooks/b.sh", "c": "~/.claude-other/x"}}\n' \
+        > "$home/.claude/settings.json"
+    run_mirror "$home" y claude "$home/.claude" "$dst" > /dev/null
+    assert_contains "$dst/settings.json" "\"$dst/hooks/a.sh\""
+    assert_contains "$dst/settings.json" "\"$dst/hooks/b.sh\""
+    assert_contains "$dst/settings.json" '"~/.claude-other/x"'
+}
+test_default_profile_rewrites_home_forms
+
+test_symlinked_source_file_is_not_modified() {
+    local home="$TMPDIR/link-home" src dst dotfile
+    src="$home/src claude"
+    dst="$home/dst claude"
+    dotfile="$home/dotfiles/settings.json"
+    make_claude_source "$src"
+    make_claude_target "$dst"
+    mkdir -p "$home/dotfiles"
+    mv "$src/settings.json" "$dotfile"
+    ln -s "$dotfile" "$src/settings.json"
+    run_mirror "$home" y claude "$src" "$dst" > /dev/null
+
+    assert_contains "$dotfile" "node $src/hooks/cc-statusline.js"
+    [[ ! -L "$dst/settings.json" ]] || fail "Target settings.json is still a symlink"
+    assert_contains "$dst/settings.json" "node $dst/hooks/cc-statusline.js"
+}
+test_symlinked_source_file_is_not_modified
+
+test_codex_mirror() {
+    local home="$TMPDIR/codex-mirror-home" src dst
+    src="$home/src codex"
+    dst="$home/dst codex"
+    mkdir -p "$src/rules" "$src/skills/s" "$src/plugins/cache/mk/p" "$src/sessions" "$dst"
+    printf '# AGENTS.md\ncodex rules\n' > "$src/AGENTS.md"
+    cat > "$src/config.toml" <<EOF
+model = "gpt-5"
+notify = ["$src/notify.sh"]
+
+[plugins."p@mk"]
+enabled = true
+
+[mcp_servers.search]
+command = "search-mcp"
+
+[mcp_servers.search.env]
+SEARCH_KEY = "codex-secret-value"
+EOF
+    printf 'rule\n' > "$src/rules/default.rules"
+    printf 'skill\n' > "$src/skills/s/SKILL.md"
+    printf 'plugin\n' > "$src/plugins/cache/mk/p/plugin.json"
+    printf '{"token": "codex-auth-secret"}\n' > "$src/auth.json"
+    printf 'session\n' > "$src/sessions/s.jsonl"
+    printf '{"token": "target-auth"}\n' > "$dst/auth.json"
+
+    run_mirror "$home" y codex "$src" "$dst" > "$TMPDIR/codex.out" 2>&1
+    assert_contains "$dst/AGENTS.md" "codex rules"
+    assert_contains "$dst/config.toml" "$dst/notify.sh"
+    assert_contains "$dst/config.toml" '[plugins."p@mk"]'
+    python3 -c 'import sys, tomllib; tomllib.load(open(sys.argv[1], "rb"))' "$dst/config.toml"
+    assert_exists "$dst/rules/default.rules"
+    assert_exists "$dst/plugins/cache/mk/p/plugin.json"
+    assert_contains "$dst/auth.json" "target-auth"
+    assert_missing "$dst/sessions"
+    assert_contains "$TMPDIR/codex.out" "MCP server search env: SEARCH_KEY"
+    assert_not_contains "$TMPDIR/codex.out" "codex-secret-value"
+}
+test_codex_mirror
+
 echo "mirror tests passed"

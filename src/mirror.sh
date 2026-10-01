@@ -241,6 +241,67 @@ except BaseException:
 PY
 }
 
+mirror_rewrite_paths() {
+    local source="$1" target="$2" path files=()
+    for path in "${MIRROR_REWRITE[@]}"; do
+        if [[ -f "$target/$path" ]]; then
+            files+=("$target/$path")
+        fi
+    done
+    [[ ${#files[@]} -gt 0 ]] || return 0
+    MIRROR_SOURCE="$source" MIRROR_TARGET="$target" MIRROR_HOME="$HOME" \
+        MIRROR_NAME="$MIRROR_DEFAULT_NAME" python3 - "${files[@]}" <<'PY'
+import os
+import re
+import sys
+
+source = os.environ["MIRROR_SOURCE"]
+target = os.path.realpath(os.environ["MIRROR_TARGET"])
+home = os.environ["MIRROR_HOME"]
+name = os.environ["MIRROR_NAME"]
+
+prefixes = {os.path.abspath(source), os.path.realpath(source)}
+if os.path.realpath(source) == os.path.realpath(os.path.join(home, name)):
+    prefixes |= {os.path.join(home, name), f"~/{name}", f"$HOME/{name}", f"${{HOME}}/{name}"}
+# Longest first, and only at a path boundary, so ~/.claude never matches ~/.claude-work.
+alternatives = "|".join(re.escape(p) for p in sorted(prefixes, key=len, reverse=True))
+pattern = re.compile(f"(?:{alternatives})(?=[/\"'\\s]|$)", re.MULTILINE)
+
+for path in sys.argv[1:]:
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    updated = pattern.sub(lambda _match: target, text)
+    if updated == text:
+        continue
+    mode = os.stat(path).st_mode & 0o7777
+    tmp = f"{path}.vibespec-tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(updated)
+    os.chmod(tmp, mode)
+    # Replace the path itself: a symlinked copy becomes a regular file, so the
+    # shared file it pointed at (for example a dotfiles repo) stays unchanged.
+    os.replace(tmp, path)
+PY
+}
+
+mirror_scan_refs() {
+    local source="$1" target="$2" path src_real hits="" found
+    src_real="$(realpath -m "$source")"
+    for path in "${MIRROR_SCAN[@]}"; do
+        [[ -d "$target/$path" ]] || continue
+        found="$(grep -rlF -e "$source" -e "$src_real" -- "$target/$path" 2>/dev/null || true)"
+        if [[ -n "$found" ]]; then
+            hits+="${found}"$'\n'
+        fi
+    done
+    [[ -n "$hits" ]] || return 0
+    print_message warning "These copied files still reference ${source}; mirror leaves them unchanged:"
+    while IFS= read -r path; do
+        [[ -n "$path" ]] && printf '  %s\n' "$path"
+    done <<< "$hits"
+    return 0
+}
+
 mirror_secrets_warning() {
     local tool="$1" source="$2" names line
     if [[ "$tool" == claude ]]; then
@@ -314,6 +375,7 @@ mirror_apply() {
     if [[ "$tool" == claude ]]; then
         mirror_claude_mcp "$source_config" "$target_config" "$snapshot" || return 1
     fi
+    mirror_rewrite_paths "$source" "$target" || return 1
     for file in "${MIRROR_REWRITE[@]}"; do
         mirror_check_parse "$target/$file" || return 1
     done
@@ -343,6 +405,7 @@ mirror_profile() {
         print_message error "Mirror failed; the target is partial. Previous files: ${snapshot}"
         return 1
     fi
+    mirror_scan_refs "$source" "$target"
     record_install "mirror:${tool}:$(slugify "$target")" "mirror" "$source" "$target" "$snapshot"
     print_message success "Mirrored ${source} onto ${target}"
     print_message info "Previous target files: ${snapshot}"
