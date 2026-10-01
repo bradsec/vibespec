@@ -118,6 +118,10 @@ mirror_validate() {
     fi
     src_real="$(realpath -m "$source")"
     dst_real="$(realpath -m "$target")"
+    if [[ "$dst_real" == *[\"\'\\]* ]]; then
+        print_message error "Target path must not contain quotes or backslashes: ${dst_real}"
+        return 1
+    fi
     if [[ "$src_real" == "$dst_real" ]]; then
         print_message error "Source and target are the same directory: ${src_real}"
         return 1
@@ -414,7 +418,10 @@ mirror_profile() {
         return 0
     fi
     snapshot="$(mirror_snapshot_dir "$target")"
-    mkdir -p "$snapshot"
+    if ! mkdir -p "$snapshot"; then
+        print_message error "Cannot create snapshot directory: ${snapshot}; nothing changed."
+        return 1
+    fi
     if ! mirror_apply "$tool" "$source" "$target" "$snapshot"; then
         print_message error "Mirror failed; the target is partial. Previous files: ${snapshot}"
         return 1

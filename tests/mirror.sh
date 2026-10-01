@@ -464,4 +464,37 @@ test_rejects_symlinked_target_parents() {
 }
 test_rejects_symlinked_target_parents
 
+test_snapshot_file_stops_before_changes() {
+    local home="$TMPDIR/snapshot-file-home" src dst before
+    src="$home/src claude"
+    dst="$home/dst claude"
+    make_claude_source "$src"
+    make_claude_target "$dst"
+    printf 'existing file\n' > "$dst/.vibespec-mirror-backup"
+    before="$(tree_sum "$dst")"
+    if run_mirror "$home" y claude "$src" "$dst" > "$TMPDIR/snapshot-file.out" 2>&1; then
+        fail "Snapshot file was accepted"
+    fi
+    assert_contains "$TMPDIR/snapshot-file.out" "nothing changed"
+    [[ "$(tree_sum "$dst")" == "$before" ]] || fail "Failed snapshot creation changed the target"
+}
+test_snapshot_file_stops_before_changes
+
+test_rejects_quote_in_resolved_target() {
+    local home="$TMPDIR/resolved-target-home" src dst link before
+    src="$home/src claude"
+    dst="$home/we\"ird"
+    link="$home/link target"
+    make_claude_source "$src"
+    make_claude_target "$dst"
+    ln -s "$dst" "$link"
+    before="$(tree_sum "$dst")"
+    if run_mirror "$home" y claude "$src" "$link" > "$TMPDIR/resolved-target.out" 2>&1; then
+        fail "Quote in resolved target was accepted"
+    fi
+    assert_contains "$TMPDIR/resolved-target.out" "Target path must not contain quotes or backslashes"
+    [[ "$(tree_sum "$dst")" == "$before" ]] || fail "Rejected resolved target changed files"
+}
+test_rejects_quote_in_resolved_target
+
 echo "mirror tests passed"
